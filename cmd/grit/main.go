@@ -19,6 +19,7 @@ import (
 
 	"github.com/n1k0s1/grit/internal/activity"
 	"github.com/n1k0s1/grit/internal/collect"
+	"github.com/n1k0s1/grit/internal/edits"
 	"github.com/n1k0s1/grit/internal/model"
 	"github.com/n1k0s1/grit/internal/redact"
 	"github.com/n1k0s1/grit/internal/scan"
@@ -189,10 +190,10 @@ func sessions(args []string) {
 	days := fs.Int("days", 7, "how far back")
 	_ = fs.Parse(args)
 	w := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tSTARTED\tPROJECT\tTOOL\tPROMPTS\tSESSION\tAGENT\tCREDITED\tFLAGS")
+	fmt.Fprintln(w, "ID\tSTARTED\tPROJECT\tTOOL\tPROMPTS\tEDITS AI/HAND\tSESSION\tAGENT\tCREDITED\tFLAGS")
 	for _, r := range results(*days) {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n", short(r.SessionID), r.Start.Local().Format("Mon 02 Jan 15:04"),
-			r.Project, r.Harness, r.Prompts, dur(r.WallSec), dur(r.AgentSec), dur(r.CreditedSec), strings.Join(r.Flags, ","))
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%d/%d\t%s\t%s\t%s\t%s\n", short(r.SessionID), r.Start.Local().Format("Mon 02 Jan 15:04"),
+			r.Project, r.Harness, r.Prompts, r.AgentEdits, r.HandEdits, dur(r.WallSec), dur(r.AgentSec), dur(r.CreditedSec), strings.Join(r.Flags, ","))
 	}
 	w.Flush()
 }
@@ -341,7 +342,14 @@ func watch(args []string) {
 	sc := scan.New(collect.HomeDir())
 	go startSampler(context.Background())
 	fmt.Printf("watching agent logs every %s, syncing to %s\n", *every, c.Server)
+	w := &edits.Watcher{}
 	for {
+		// Look for files written in recently active projects. The first
+		// pass over a project is a baseline; later passes log what changed.
+		w.SetRoots(sc.Roots())
+		if err := edits.Append(edits.DefaultDir(collect.HomeDir()), w.Poll()); err != nil {
+			fmt.Fprintln(os.Stderr, "edits:", err)
+		}
 		n, err := syncOnce(sc, c, false)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "sync:", err)

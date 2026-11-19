@@ -98,7 +98,9 @@ type Result struct {
 	LowEffortPrompts int        `json:"low_effort"`
 	SpecificPrompts  int        `json:"specific"`
 	Flags            []string   `json:"flags,omitempty"`
-	Signal           string     `json:"signal,omitempty"` // "activity" when keyboard and mouse data shaped the score
+	Signal           string     `json:"signal,omitempty"`      // "activity" when keyboard and mouse data shaped the score
+	HandEdits        int        `json:"hand_edits,omitempty"`  // files written by hand (manual sessions)
+	AgentEdits       int        `json:"agent_edits,omitempty"` // files written by the agent during this session
 	Intervals        []Interval `json:"intervals"`
 	Turns            []Turn     `json:"turns"`
 	Commits          []Commit   `json:"commits,omitempty"`
