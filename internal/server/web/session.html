@@ -3,6 +3,9 @@
 <p class="crumbs"><a href="/u/{{.User.Username}}">{{.User.Username}}</a> / <a href="/u/{{.User.Username}}/p/{{.S.Project}}">{{.S.Project}}</a> / session</p>
 <section class="profile-head">
   <div><h1>{{.S.Project}}</h1><p class="muted">{{.S.Harness}}{{if .S.Model}} · {{.S.Model}}{{end}} · {{when .S.Start}}</p>
+  <span class="tier {{.Tier}}" title="Trust tier: high when the server witnessed the session live and it was scored with keyboard and mouse activity, medium with one of the two, low with neither">{{.Tier}} trust</span>
+  {{if .Witness}}<span class="att {{.Witness}}" title="When the server first saw this session's turns">{{.Witness}}</span>{{else}}<span class="att none">no attestation</span>{{end}}
+  {{if eq .S.Signal "activity"}}<span class="att witnessed" title="Only minutes with keyboard or mouse input were credited">activity</span>{{else}}<span class="att none" title="Scored from timestamps alone">no activity data</span>{{end}}
   {{range .S.Flags}}<span class="flag">{{.}}</span>{{end}}</div>
   <div class="stats">
     <div class="stat"><b>{{dur .S.CreditedSec}}</b><span>credited</span></div>

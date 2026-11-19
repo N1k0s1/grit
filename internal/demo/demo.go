@@ -4,10 +4,12 @@
 package demo
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"time"
 
+	"github.com/n1k0s1/grit/internal/attest"
 	"github.com/n1k0s1/grit/internal/model"
 	"github.com/n1k0s1/grit/internal/score"
 	"github.com/n1k0s1/grit/internal/store"
@@ -26,13 +28,15 @@ type persona struct {
 	parallel bool
 	submit   string
 	reviewed string
+	activity bool // runs the activity sampler: scored with keyboard and mouse data
+	live     bool // syncs as they work: the server witnesses each session
 }
 
 var people = []persona{
-	{name: "ava", projects: []string{"voxel-racer", "chem-flashcards"}, harness: []string{"claude-code", "codex"}, days: 0.85, sessions: [2]int{1, 3}, turns: [2]int{8, 22}, replyGap: [2]int{20, 420}, runLen: [2]int{30, 240}, lazy: 0.05, submit: "voxel-racer"},
+	{name: "ava", projects: []string{"voxel-racer", "chem-flashcards"}, harness: []string{"claude-code", "codex"}, days: 0.85, sessions: [2]int{1, 3}, turns: [2]int{8, 22}, replyGap: [2]int{20, 420}, runLen: [2]int{30, 240}, lazy: 0.05, submit: "voxel-racer", activity: true, live: true},
 	{name: "sam", projects: []string{"ai-trading-bot"}, harness: []string{"claude-code"}, days: 0.7, sessions: [2]int{1, 2}, turns: [2]int{6, 12}, replyGap: [2]int{900, 2400}, runLen: [2]int{300, 1500}, lazy: 0.75, submit: "ai-trading-bot"},
-	{name: "lee", projects: []string{"discord-study-bot", "portfolio-site"}, harness: []string{"codex", "hook:cursor"}, days: 0.6, sessions: [2]int{1, 2}, turns: [2]int{6, 16}, replyGap: [2]int{30, 500}, runLen: [2]int{20, 200}, lazy: 0.1, parallel: true},
-	{name: "mia", projects: []string{"rp2040-synth"}, harness: []string{"claude-code"}, days: 0.5, sessions: [2]int{1, 2}, turns: [2]int{2, 6}, replyGap: [2]int{20, 240}, runLen: [2]int{20, 120}, lazy: 0.05, reviewed: "rp2040-synth"},
+	{name: "lee", projects: []string{"discord-study-bot", "portfolio-site"}, harness: []string{"codex", "hook:cursor"}, days: 0.6, sessions: [2]int{1, 2}, turns: [2]int{6, 16}, replyGap: [2]int{30, 500}, runLen: [2]int{20, 200}, lazy: 0.1, parallel: true, live: true},
+	{name: "mia", projects: []string{"rp2040-synth"}, harness: []string{"claude-code"}, days: 0.5, sessions: [2]int{1, 2}, turns: [2]int{2, 6}, replyGap: [2]int{20, 240}, runLen: [2]int{20, 120}, lazy: 0.05, reviewed: "rp2040-synth", activity: true, live: true},
 }
 
 var good = []string{
@@ -51,6 +55,28 @@ var good = []string{
 }
 var lazy = []string{"continue", "yes", "ok", "keep going", "do it", "continue"}
 var subjects = []string{"fix collision step", "add ghost replay", "tests for friction curve", "mobile layout fixes", "settings screen", "reconnect backoff", "rename Player to Racer", "null check in loadDeck", "envelope release buffer", "OLED cutoff bar"}
+
+// busy is activity data for a builder who was at the keyboard throughout.
+type busy struct{}
+
+func (busy) Seen(time.Time) bool   { return true }
+func (busy) Active(time.Time) bool { return true }
+
+func scoreFor(p persona, s model.Session) model.Result {
+	if p.activity {
+		return score.ScoreWith(s, score.Default, busy{})
+	}
+	return score.Score(s, score.Default)
+}
+
+// attestDemo adds the attestation chain the real client would compute.
+func attestDemo(r *model.Result) {
+	salt := attest.Salt([]byte("grit demo device"), r.SessionID)
+	for i, h := range attest.Chain(r.SessionID, salt, r.Turns) {
+		r.Turns[i].Link = h
+	}
+	r.Salt = hex.EncodeToString(salt)
+}
 
 func randIn(r *rand.Rand, a [2]int) int { return a[0] + r.Intn(a[1]-a[0]+1) }
 
@@ -108,10 +134,10 @@ func Seed(st *store.Store) error {
 					start = now.Add(-time.Duration(90+r.Intn(120)) * time.Minute)
 				}
 				proj := p.projects[r.Intn(len(p.projects))]
-				res := score.Score(session(r, p, proj, p.harness[r.Intn(len(p.harness))], start), score.Default)
+				res := scoreFor(p, session(r, p, proj, p.harness[r.Intn(len(p.harness))], start))
 				if p.parallel && len(p.projects) > 1 && r.Float64() < 0.5 {
 					other := p.projects[(indexOf(p.projects, proj)+1)%len(p.projects)]
-					par := score.Score(session(r, p, other, p.harness[r.Intn(len(p.harness))], start.Add(time.Duration(r.Intn(600))*time.Second)), score.Default)
+					par := scoreFor(p, session(r, p, other, p.harness[r.Intn(len(p.harness))], start.Add(time.Duration(r.Intn(600))*time.Second)))
 					results = append(results, &par)
 				}
 				results = append(results, &res)
@@ -129,12 +155,34 @@ func Seed(st *store.Store) error {
 					})
 				}
 			}
+			score.Flag(x, nil)
+			attestDemo(x)
 			pub = append(pub, x.Public())
 			byProject[x.Project] = append(byProject[x.Project], *x)
 		}
-		if err := st.UpsertSessions(u.ID, pub); err != nil {
-			return err
+		for _, x := range pub {
+			// A live builder's client syncs every 30 seconds, so the server
+			// sees each turn moments after its prompt. Others sync later.
+			if p.live {
+				for k := 1; k < len(x.Turns); k++ {
+					part := x
+					part.Turns = x.Turns[:k]
+					seen := x.Turns[k-1].PromptAt.Add(30 * time.Second)
+					st.Now = func() time.Time { return seen }
+					if err := st.UpsertSessions(u.ID, []model.Result{part}); err != nil {
+						return err
+					}
+				}
+				last := x.Turns[len(x.Turns)-1].PromptAt.Add(30 * time.Second)
+				st.Now = func() time.Time { return last }
+			} else {
+				st.Now = time.Now
+			}
+			if err := st.UpsertSessions(u.ID, []model.Result{x}); err != nil {
+				return err
+			}
 		}
+		st.Now = time.Now
 		for _, proj := range []string{p.submit, p.reviewed} {
 			if proj == "" {
 				continue

@@ -340,7 +340,8 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 		notFound(w)
 		return
 	}
-	s.render(w, "session", map[string]any{"Title": "Session", "User": u, "S": res})
+	witness, tier, _ := s.Store.SessionTrust(u, r.PathValue("id"))
+	s.render(w, "session", map[string]any{"Title": "Session", "User": u, "S": res, "Witness": witness, "Tier": tier})
 }
 
 func (s *Server) reviews(w http.ResponseWriter, r *http.Request) {

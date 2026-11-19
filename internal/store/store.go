@@ -441,6 +441,15 @@ func (s *Store) Session(u User, id string) (model.Result, error) {
 	return r, err
 }
 
+// SessionTrust returns a stored session's attestation status and trust tier.
+func (s *Store) SessionTrust(u User, id string) (witness, tier string, err error) {
+	err = s.db.QueryRow(`SELECT witness, tier FROM sessions WHERE user_id = ? AND id = ?`, u.ID, id).Scan(&witness, &tier)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = ErrNotFound
+	}
+	return
+}
+
 // ProjectSessions returns a project's sessions and commits.
 func (s *Store) ProjectSessions(u User, project string) (ProjectRow, []SessionRow, []model.Commit, error) {
 	var pr ProjectRow

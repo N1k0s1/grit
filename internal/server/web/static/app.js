@@ -77,6 +77,7 @@
     var week = 0, weekWall = 0, all = 0, today = 0;
     var weekAgo = now.getTime() / 1000 - 7 * 86400;
     var harness = {};
+    var tiers = { high: 0, medium: 0, low: 0 }, tierTotal = 0;
     p.sessions.forEach(function (s) {
       var d = new Date(s.start * 1000), k = dayKey(d);
       days[k] = days[k] || { you: 0, agent: 0 };
@@ -84,6 +85,7 @@
       all += s.credited;
       if (k === todayKey) today += s.credited;
       if (s.start >= weekAgo) { week += s.credited; weekWall += s.wall; harness[s.harness] = (harness[s.harness] || 0) + s.credited; }
+      if (s.tier in tiers) { tiers[s.tier] += s.credited; tierTotal += s.credited; }
     });
     // streak: consecutive days with at least 15 credited minutes, ending today or yesterday
     var streak = 0, cur = new Date(now);
@@ -95,7 +97,9 @@
       "<div class=stat><b>" + dur(week) + "</b><span>last 7 days</span></div>" +
       "<div class=stat><b>" + (weekWall ? Math.round((week / weekWall) * 100) : 0) + "%</b><span>focus this week</span></div>" +
       "<div class=stat><b>" + streak + "d</b><span>streak</span></div>" +
-      "<div class=stat><b>" + (all / 3600).toFixed(1) + "h</b><span>all time</span></div>";
+      "<div class=stat><b>" + (all / 3600).toFixed(1) + "h</b><span>all time</span></div>" +
+      '<div class=stat title="Share of credited time by trust tier: high, medium, low"><b>' + (tierTotal ? Math.round((tiers.high / tierTotal) * 100) : 0) + "%</b><span>high trust (" +
+      (tierTotal ? Math.round((tiers.medium / tierTotal) * 100) : 0) + "% medium)</span></div>";
 
     var cols = [], max = 1;
     for (var i = 13; i >= 0; i--) {
@@ -132,7 +136,8 @@
     document.getElementById("sessions").innerHTML = p.sessions.slice(0, 25).map(function (s) {
       var d = new Date(s.start * 1000);
       return "<tr><td><a href=\"/u/" + esc(p.user.username) + "/s/" + encodeURIComponent(s.id) + '">' + esc(d.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })) + "</a></td>" +
-        "<td>" + esc(s.project) + '</td><td class="muted">' + esc(s.harness) + '</td><td class="num">' + s.prompts + '</td><td class="num muted">' + dur(s.wall) + '</td><td class="num strong">' + dur(s.credited) + "</td><td>" +
+        "<td>" + esc(s.project) + '</td><td class="muted">' + esc(s.harness) + '</td><td class="num">' + s.prompts + '</td><td class="num muted">' + dur(s.wall) + '</td><td class="num strong">' + dur(s.credited) + "</td>" +
+        '<td><span class="tier ' + esc(s.tier) + '">' + esc(s.tier) + "</span></td><td>" +
         (s.flags || []).map(function (f) { return '<span class="flag">' + esc(f) + "</span>"; }).join("") + "</td></tr>";
     }).join("");
   }

@@ -103,6 +103,13 @@ func TestSubmissionAttestationAndTier(t *testing.T) {
 		t.Fatalf("both live sessions with activity should be high: %s", prof)
 	}
 
+	if page := h.do("GET", "/u/ava/s/s1", nil, nil); !strings.Contains(page, `<span class="tier high"`) || !strings.Contains(page, `<span class="att witnessed"`) {
+		t.Fatalf("session page should show the high tier and the witness")
+	}
+	if page := h.do("GET", "/u/ava", nil, nil); !strings.Contains(page, `"tier":"high"`) {
+		t.Fatalf("profile page data should carry each session's tier")
+	}
+
 	// A day later the second session is submitted with a rewritten prompt.
 	h.st.Now = func() time.Time { return t0.Add(24 * time.Hour) }
 	tampered.Turns[1].PromptText = "now map it to the start button and also write the whole game"
