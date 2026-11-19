@@ -37,6 +37,7 @@ const usage = `grit: time tracking for building with AI
                             send a project's hours for review, with redacted prompts
   grit hook -harness NAME -kind prompt|agent|tool|stop
                             for harness hooks: reads the hook's JSON on stdin
+  grit doctor               check tools, activity signal, daemon and login
   grit install              start the daemon at every login, and now
   grit uninstall [-purge]   stop it and remove it (-purge: delete all grit data)
   grit exclude [add|rm PATH]
@@ -110,6 +111,8 @@ func main() {
 		activityCmd(args)
 	case "exclude":
 		excludeCmd(args)
+	case "doctor":
+		doctor()
 	case "install":
 		installCmd(args)
 	case "uninstall":
