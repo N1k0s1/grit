@@ -19,7 +19,6 @@ import (
 
 	"github.com/n1k0s1/grit/internal/activity"
 	"github.com/n1k0s1/grit/internal/collect"
-	"github.com/n1k0s1/grit/internal/edits"
 	"github.com/n1k0s1/grit/internal/model"
 	"github.com/n1k0s1/grit/internal/redact"
 	"github.com/n1k0s1/grit/internal/scan"
@@ -30,7 +29,8 @@ const usage = `grit: time tracking for building with AI
   grit                      today and this week, per project (offline)
   grit login -server URL -user NAME
   grit sync                 send logged hours (numbers only, no prompts)
-  grit watch [-every 30s]   sync in the background whenever a session changes
+  grit daemon [-every 30s]  run in the background: sample activity, watch
+                            edits, read new log lines, sync (alias: watch)
   grit sessions [-days 7]   list sessions with credited time
   grit explain ID           show how every minute of a session was counted
   grit submit PROJECT [-note TEXT] [-dry]
@@ -94,8 +94,8 @@ func main() {
 			die("%v", err)
 		}
 		fmt.Printf("synced %d changed sessions\n", n)
-	case "watch":
-		watch(args)
+	case "daemon", "watch":
+		daemon(args)
 	case "sessions":
 		sessions(args)
 	case "explain":
@@ -311,6 +311,11 @@ func syncOnce(sc *scan.Scanner, c config, verbose bool) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	return sendChanged(rs, c, verbose)
+}
+
+// sendChanged uploads the results whose numbers changed since the last sync.
+func sendChanged(rs []*model.Result, c config, verbose bool) (int, error) {
 	state := map[string]string{}
 	if b, err := os.ReadFile(filepath.Join(gritDir(), "synced.json")); err == nil {
 		_ = json.Unmarshal(b, &state)
@@ -336,32 +341,6 @@ func syncOnce(sc *scan.Scanner, c config, verbose bool) (int, error) {
 		}
 	}
 	return len(send), saveJSON("synced.json", state)
-}
-
-func watch(args []string) {
-	fs := flag.NewFlagSet("watch", flag.ExitOnError)
-	every := fs.Duration("every", 30*time.Second, "how often to look for changes")
-	_ = fs.Parse(args)
-	c := loadConfig()
-	sc := scan.New(collect.HomeDir())
-	go startSampler(context.Background())
-	fmt.Printf("watching agent logs every %s, syncing to %s\n", *every, c.Server)
-	w := &edits.Watcher{}
-	for {
-		// Look for files written in recently active projects. The first
-		// pass over a project is a baseline; later passes log what changed.
-		w.SetRoots(sc.Roots())
-		if err := edits.Append(edits.DefaultDir(collect.HomeDir()), w.Poll()); err != nil {
-			fmt.Fprintln(os.Stderr, "edits:", err)
-		}
-		n, err := syncOnce(sc, c, false)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "sync:", err)
-		} else if n > 0 {
-			fmt.Printf("%s synced %d sessions\n", time.Now().Format("15:04:05"), n)
-		}
-		time.Sleep(*every)
-	}
 }
 
 func submit(args []string) {

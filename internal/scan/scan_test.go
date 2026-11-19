@@ -122,3 +122,79 @@ func TestExcludedSessionsAreSkipped(t *testing.T) {
 		t.Fatalf("got %d results, want only the session outside the excluded folder", len(rs))
 	}
 }
+
+func TestIncrementalMatchesFullParse(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".claude", "projects", "-w", "inc.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
+	line := func(m int, kind string) string {
+		ts := base.Add(time.Duration(m) * time.Minute).Format(time.RFC3339)
+		if kind == "user" {
+			return fmt.Sprintf(`{"type":"user","sessionId":"inc","timestamp":%q,"origin":{"kind":"human"},"message":{"role":"user","content":"prompt number %d for the parser"}}`, ts, m) + "\n"
+		}
+		return fmt.Sprintf(`{"type":"assistant","timestamp":%q,"message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"go test"}}]}}`, ts) + "\n"
+	}
+	appendTo := func(s string) {
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.WriteString(s)
+		f.Close()
+	}
+	sc := New(home)
+	since := time.Now().Add(-24 * time.Hour)
+	appendTo(line(0, "user") + line(1, "agent"))
+	if _, err := sc.Run(since); err != nil {
+		t.Fatal(err)
+	}
+	// A half-written line must wait until it is complete.
+	half := line(5, "user")
+	appendTo(line(3, "agent") + half[:20])
+	r1, _ := sc.Run(since)
+	if r1[0].Prompts != 1 {
+		t.Fatalf("partial line was parsed: %d prompts", r1[0].Prompts)
+	}
+	appendTo(half[20:] + line(6, "agent"))
+	got, _ := sc.Run(since)
+	want, _ := New(home).Run(since)
+	if len(got) != 1 || len(want) != 1 {
+		t.Fatalf("got %d want %d results", len(got), len(want))
+	}
+	g, w := got[0], want[0]
+	if g.Prompts != 2 || g.Prompts != w.Prompts || g.CreditedSec != w.CreditedSec || g.ToolCalls != w.ToolCalls || g.AgentSec != w.AgentSec {
+		t.Fatalf("incremental %+v\nfull %+v", g, w)
+	}
+}
+
+func TestChanged(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".claude", "projects", "-w", "c.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ts := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)
+	line := fmt.Sprintf(`{"type":"user","sessionId":"c","timestamp":%q,"origin":{"kind":"human"},"message":{"role":"user","content":"hello agent, start here"}}`+"\n", ts)
+	if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sc := New(home)
+	if !sc.Changed() {
+		t.Fatal("a never-scanned file is a change")
+	}
+	if _, err := sc.Run(time.Now().Add(-24 * time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if sc.Changed() {
+		t.Fatal("nothing changed since the run")
+	}
+	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	f.WriteString(line)
+	f.Close()
+	if !sc.Changed() {
+		t.Fatal("an appended line is a change")
+	}
+}

@@ -30,16 +30,75 @@ type fileKey struct {
 // logs that changed. On an old laptop that is the difference between a
 // background process you never notice and one you do.
 type Scanner struct {
-	Home     string
-	Config   score.Config
-	Activity activity.Log // keyboard and mouse minutes; empty Dir disables v2
-	EditsDir string       // logged file changes; empty disables hand-written time
-	parsed   map[string]fileKey
-	cache    map[string][]model.Session
-	commits  map[string][]model.Commit
-	roots    []string
-	secret   []byte
+	Home      string
+	Config    score.Config
+	Activity  activity.Log // keyboard and mouse minutes; empty Dir disables v2
+	EditsDir  string       // logged file changes; empty disables hand-written time
+	parsed    map[string]fileKey
+	cache     map[string][]model.Session
+	commits   map[string][]model.Commit
+	streams   map[string]*stream
+	read      int64 // bytes of log read so far
+	lastSince time.Time
+	roots     []string
+	secret    []byte
 }
+
+// stream is the incremental parse state of one log file.
+type stream struct {
+	offset int64
+	state  collect.LineState
+}
+
+// tail reads only what was appended to a file since the last pass. A file
+// that shrank was replaced or rotated, so it is parsed again from the start.
+func (s *Scanner) tail(c collect.Stream, path string, size int64) []model.Session {
+	st := s.streams[path]
+	if st == nil || size < st.offset {
+		st = &stream{state: c.Start(path)}
+		s.streams[path] = st
+	}
+	if off, err := collect.Tail(path, st.offset, st.state); err == nil {
+		s.read += off - st.offset
+		st.offset = off
+	}
+	return st.state.Sessions()
+}
+
+// Changed reports whether any log file is new or different since the last
+// Run. It only stats files, so the daemon can skip rescoring when nothing
+// happened.
+func (s *Scanner) Changed() bool {
+	seen := 0
+	for _, c := range collect.All() {
+		for _, p := range c.Paths(s.Home) {
+			st, err := os.Stat(p)
+			if err != nil {
+				continue
+			}
+			k, ok := s.parsed[p]
+			if !ok {
+				// Never parsed: new, unless it was skipped as too old.
+				if !s.skippedOld(st) {
+					return true
+				}
+				continue
+			}
+			seen++
+			if k != (fileKey{p, st.ModTime().UnixNano(), st.Size()}) {
+				return true
+			}
+		}
+	}
+	return seen != len(s.parsed)
+}
+
+func (s *Scanner) skippedOld(st os.FileInfo) bool {
+	return !s.lastSince.IsZero() && st.ModTime().Before(s.lastSince)
+}
+
+// BytesRead is how many bytes of log the scanner has read incrementally.
+func (s *Scanner) BytesRead() int64 { return s.read }
 
 // Roots returns the git roots of projects with a session in the last week,
 // as of the last Run. These are the working trees worth watching for hand
@@ -48,11 +107,13 @@ func (s *Scanner) Roots() []string { return s.roots }
 
 // New makes a scanner for a home directory.
 func New(home string) *Scanner {
-	return &Scanner{Home: home, Config: score.Default, Activity: activity.Log{Dir: activity.DefaultDir(home)}, EditsDir: edits.DefaultDir(home), parsed: map[string]fileKey{}, cache: map[string][]model.Session{}, commits: map[string][]model.Commit{}}
+	return &Scanner{Home: home, Config: score.Default, Activity: activity.Log{Dir: activity.DefaultDir(home)}, EditsDir: edits.DefaultDir(home),
+		parsed: map[string]fileKey{}, cache: map[string][]model.Session{}, commits: map[string][]model.Commit{}, streams: map[string]*stream{}}
 }
 
 // Run returns scored, deduplicated results for sessions active since a time.
 func (s *Scanner) Run(since time.Time) ([]*model.Result, error) {
+	s.lastSince = since
 	var sessions []model.Session
 	for _, c := range collect.All() {
 		for _, p := range c.Paths(s.Home) {
@@ -62,11 +123,15 @@ func (s *Scanner) Run(since time.Time) ([]*model.Result, error) {
 			}
 			k := fileKey{p, st.ModTime().UnixNano(), st.Size()}
 			if s.parsed[p] != k {
-				ss, err := c.Parse(p)
-				if err != nil && len(ss) == 0 {
-					continue
+				if sc, ok := c.(collect.Stream); ok {
+					s.cache[p] = s.tail(sc, p, st.Size())
+				} else {
+					ss, err := c.Parse(p)
+					if err != nil && len(ss) == 0 {
+						continue
+					}
+					s.cache[p] = ss
 				}
-				s.cache[p] = ss
 				s.parsed[p] = k
 			}
 			sessions = append(sessions, s.cache[p]...)

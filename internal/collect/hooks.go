@@ -42,44 +42,56 @@ func (Hooks) Paths(home string) []string {
 	return []string{EventsPath(home)}
 }
 
-func (Hooks) Parse(path string) ([]model.Session, error) {
-	by := map[string]*model.Session{}
-	err := eachLine(path, func(line []byte) {
-		var h HookEvent
-		if json.Unmarshal(line, &h) != nil || h.Session == "" {
-			return
-		}
-		key := h.Harness + "/" + h.Session
-		s := by[key]
-		if s == nil {
-			s = &model.Session{ID: key, Harness: "hook:" + h.Harness, Source: path}
-			by[key] = s
-		}
-		if h.Cwd != "" {
-			s.Cwd = h.Cwd
-		}
-		if h.Model != "" {
-			s.Model = h.Model
-		}
-		kind := model.Agent
-		switch h.Kind {
-		case "prompt":
-			kind = model.Prompt
-		case "tool":
-			kind = model.Tool
-		}
-		s.Events = append(s.Events, model.Event{At: h.At, Kind: kind, Text: h.Text, Tool: h.Tool, File: h.File})
-	})
-	keys := make([]string, 0, len(by))
-	for k := range by {
+func (h Hooks) Parse(path string) ([]model.Session, error) { return parseAll(path, h.Start(path)) }
+
+// Start returns line-at-a-time parse state for the events file.
+func (Hooks) Start(path string) LineState {
+	return &hookState{path: path, by: map[string]*model.Session{}}
+}
+
+type hookState struct {
+	path string
+	by   map[string]*model.Session
+}
+
+func (st *hookState) Line(line []byte) {
+	var h HookEvent
+	if json.Unmarshal(line, &h) != nil || h.Session == "" {
+		return
+	}
+	key := h.Harness + "/" + h.Session
+	s := st.by[key]
+	if s == nil {
+		s = &model.Session{ID: key, Harness: "hook:" + h.Harness, Source: st.path}
+		st.by[key] = s
+	}
+	if h.Cwd != "" {
+		s.Cwd = h.Cwd
+	}
+	if h.Model != "" {
+		s.Model = h.Model
+	}
+	kind := model.Agent
+	switch h.Kind {
+	case "prompt":
+		kind = model.Prompt
+	case "tool":
+		kind = model.Tool
+	}
+	addEvent(s, model.Event{At: h.At, Kind: kind, Text: h.Text, Tool: h.Tool, File: h.File})
+}
+
+func (st *hookState) Sessions() []model.Session {
+	keys := make([]string, 0, len(st.by))
+	for k := range st.by {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	out := make([]model.Session, 0, len(by))
+	out := make([]model.Session, 0, len(keys))
 	for _, k := range keys {
-		out = append(out, *by[k])
+		out = append(out, *st.by[k])
 	}
-	return out, err
+	return out
 }
 
 // FromHookInput turns whatever JSON a harness hook passes on stdin into a
