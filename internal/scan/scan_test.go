@@ -43,7 +43,19 @@ func TestHandAndAgentEdits(t *testing.T) {
 	}
 
 	at := func(m float64) time.Time { return base.Add(time.Duration(m * float64(time.Minute))) }
-	root := mustEval(t, repo) // what git reports, and what the watcher logs
+	// Like grit watch: a first scan names the roots to watch, and the
+	// watcher logs changes under those roots.
+	sc := New(home)
+	if _, err := sc.Run(time.Now().Add(-24 * time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if len(sc.Roots()) != 1 {
+		t.Fatalf("roots %v", sc.Roots())
+	}
+	root := sc.Roots()[0]
+	if filepath.Base(root) != "game" {
+		t.Fatalf("root %s", root)
+	}
 	if err := edits.Append(edits.DefaultDir(home), []edits.Change{
 		{At: at(1.5), Root: root, Path: "src/pause.js"}, // during the agent run
 		{At: at(30.5), Root: root, Path: "src/menu.js"}, // by hand, with input
@@ -62,7 +74,6 @@ func TestHandAndAgentEdits(t *testing.T) {
 		}
 	}
 
-	sc := New(home)
 	rs, err := sc.Run(time.Now().Add(-24 * time.Hour))
 	if err != nil {
 		t.Fatal(err)
@@ -82,19 +93,4 @@ func TestHandAndAgentEdits(t *testing.T) {
 	if handCredit != 150 {
 		t.Fatalf("hand credit %ds, want 150", handCredit)
 	}
-	if len(sc.Roots()) != 1 {
-		t.Fatalf("roots %v", sc.Roots())
-	}
-	if got, _ := filepath.EvalSymlinks(sc.Roots()[0]); got != mustEval(t, repo) {
-		t.Fatalf("root %s, want %s", got, repo)
-	}
-}
-
-func mustEval(t *testing.T, p string) string {
-	t.Helper()
-	r, err := filepath.EvalSymlinks(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return r
 }

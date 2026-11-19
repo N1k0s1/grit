@@ -61,9 +61,9 @@ func Resolve(cwd string) Repo {
 	if st, err := os.Stat(cwd); err == nil && st.IsDir() {
 		r.Present = true
 		if top, err := git(cwd, "rev-parse", "--show-toplevel"); err == nil && top != "" {
-			r.Root = top
-			r.Name = filepath.Base(top)
-			if rem, err := git(top, "remote", "get-url", "origin"); err == nil {
+			r.Root = filepath.Clean(top) // git prints forward slashes, even on Windows
+			r.Name = filepath.Base(r.Root)
+			if rem, err := git(r.Root, "remote", "get-url", "origin"); err == nil {
 				r.Remote = NormaliseRemote(rem)
 				if base := filepath.Base(r.Remote); base != "" && base != "." {
 					r.Name = base
