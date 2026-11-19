@@ -1,0 +1,28 @@
+{{define "content"}}
+{{if .Key}}
+<section class="card narrow">
+  <h1>Connecting grit</h1>
+  <p>Handing your key to grit on this computer. You can close this tab once your terminal says you are logged in.</p>
+  <form id="handoff" method="post" action="http://127.0.0.1:{{.Port}}/callback">
+    <input type="hidden" name="state" value="{{.State}}">
+    <input type="hidden" name="username" value="{{.Username}}">
+    <input type="hidden" name="key" value="{{.Key}}">
+    <noscript><button>Send to grit</button></noscript>
+  </form>
+  <script>document.getElementById("handoff").submit();</script>
+</section>
+{{else}}
+<section class="card narrow">
+  <h1>Log in grit</h1>
+  <p>grit on this computer asked for a key. Pick a username for your public profile.</p>
+  {{if .Error}}<p class="flag">{{.Error}}</p>{{end}}
+  <form method="post" class="decide">
+    <input type="hidden" name="port" value="{{.Port}}">
+    <input type="hidden" name="state" value="{{.State}}">
+    <label>Username <input name="username" required pattern="[A-Za-z0-9_\-]{2,32}" autocomplete="username" value="{{.Username}}"></label>
+    <div class="row"><button>Create account and connect</button></div>
+  </form>
+  <p class="muted small">Only start this from <code>grit login</code> in your own terminal. The key goes straight to grit on this computer.</p>
+</section>
+{{end}}
+{{end}}

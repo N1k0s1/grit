@@ -27,7 +27,7 @@ import (
 const usage = `grit: time tracking for building with AI
 
   grit                      today and this week, per project (offline)
-  grit login -server URL -user NAME
+  grit login -server URL   opens your browser to log in (or -user NAME, -key KEY)
   grit sync                 send logged hours (numbers only, no prompts)
   grit daemon [-every 30s]  run in the background: sample activity, watch
                             edits, read new log lines, sync (alias: watch)
@@ -289,29 +289,6 @@ func call(c config, method, path string, body any, out any) error {
 		return json.Unmarshal(b, out)
 	}
 	return nil
-}
-
-func login(args []string) {
-	fs := flag.NewFlagSet("login", flag.ExitOnError)
-	server := fs.String("server", "http://localhost:8080", "grit server URL")
-	user := fs.String("user", "", "username to create")
-	key := fs.String("key", "", "existing API key (skips signup)")
-	_ = fs.Parse(args)
-	c := config{Server: *server, Username: *user, Key: *key}
-	if c.Key == "" {
-		if *user == "" {
-			die("-user is required")
-		}
-		var out struct{ Key string }
-		if err := call(c, "POST", "/api/v1/signup", map[string]string{"username": *user}, &out); err != nil {
-			die("%v", err)
-		}
-		c.Key = out.Key
-	}
-	if err := saveJSON("config.json", c); err != nil {
-		die("%v", err)
-	}
-	fmt.Printf("logged in as %s on %s. Your profile: %s/u/%s\n", c.Username, c.Server, strings.TrimRight(c.Server, "/"), c.Username)
 }
 
 // syncOnce uploads sessions whose numbers changed since the last sync.

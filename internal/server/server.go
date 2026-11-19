@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -71,7 +72,7 @@ func New(st *store.Store, reviewerKey string) (*Server, error) {
 		"deref": func(p *int) int { return *p },
 	}
 	s.tpl = map[string]*template.Template{}
-	for _, page := range []string{"home", "profile", "project", "session", "review", "reviews", "how"} {
+	for _, page := range []string{"home", "profile", "project", "session", "review", "reviews", "how", "cliauth"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(webFS, "web/layout.html", "web/"+page+".html")
 		if err != nil {
 			return nil, fmt.Errorf("template %s: %w", page, err)
@@ -109,6 +110,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /review/{id}", s.reviewer(s.review))
 	mux.HandleFunc("POST /review/{id}", s.reviewer(s.reviewPost))
 	mux.HandleFunc("GET /live", s.live)
+	mux.HandleFunc("GET /cli-auth", s.cliAuth)
+	mux.HandleFunc("POST /cli-auth", s.cliAuth)
 
 	mux.HandleFunc("POST /api/v1/signup", s.apiSignup)
 	mux.HandleFunc("POST /api/v1/sessions", s.auth(s.apiSessions))
@@ -187,6 +190,39 @@ func (s *Server) reviewLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, &http.Cookie{Name: "grit_reviewer", Value: s.ReviewerKey, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 30 * 86400})
 	http.Redirect(w, r, "/review", http.StatusFound)
+}
+
+// ---- grit login ----
+
+var cliState = regexp.MustCompile(`^[0-9a-f]{32,128}$`)
+
+// cliAuth is where `grit login` sends the browser. The client listens on
+// 127.0.0.1 at port and waits for state to come back with a key. The key
+// goes back in an auto-submitted POST, never in a URL, so it stays out of
+// browser history and server logs. Until Hack Club sign-in exists
+// (Phase 4) this creates an account; afterwards it will issue a key for the
+// signed-in account instead.
+func (s *Server) cliAuth(w http.ResponseWriter, r *http.Request) {
+	port, err := strconv.Atoi(r.FormValue("port"))
+	state := r.FormValue("state")
+	if err != nil || port < 1024 || port > 65535 || !cliState.MatchString(state) {
+		http.Error(w, "start this from grit login in your terminal", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	data := map[string]any{"Title": "Log in grit", "Port": port, "State": state}
+	if r.Method == http.MethodPost {
+		name := r.FormValue("username")
+		key, err := s.Store.CreateUser(name)
+		if err != nil {
+			data["Error"], data["Username"] = err.Error(), name
+		} else {
+			data["Key"], data["Username"] = key, name
+		}
+	}
+	s.render(w, "cliauth", data)
 }
 
 // ---- API ----

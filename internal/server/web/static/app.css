@@ -135,3 +135,4 @@ button.danger { background: var(--bad-bg); color: var(--bad); }
 .att.backfilled, .tier.medium { background: var(--warn-bg); color: var(--warn); }
 .att.mismatch, .tier.low { background: var(--bad-bg); color: var(--bad); }
 .att.none { color: var(--muted, inherit); }
+.card.narrow { max-width: 520px; margin: 32px auto; }
