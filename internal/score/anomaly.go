@@ -15,8 +15,8 @@ import (
 //   - regular-timing: six or more prompts spaced almost exactly evenly
 //     (the gaps vary by under 10%), the way a script sends them.
 //   - repeated-prompts: the same prompt, or one template with only numbers
-//     changed, three or more times. Bare go-aheads such as "continue" are
-//     left to the autopilot flag.
+//     changed, three or more times and in at least 30% of prompts. Bare
+//     go-aheads such as "continue" are left to the autopilot flag.
 //   - no-input-prompts: with activity data, at least two prompts (and a
 //     quarter of all prompts) arrived with no keyboard or mouse input in
 //     their minute or the minute before.
@@ -102,7 +102,9 @@ func repeatedPrompts(ts []model.Turn) bool {
 			continue
 		}
 		seen[k]++
-		if seen[k] >= RepeatMin {
+	}
+	for _, n := range seen {
+		if n >= RepeatMin && n*10 >= len(ts)*3 {
 			return true
 		}
 	}

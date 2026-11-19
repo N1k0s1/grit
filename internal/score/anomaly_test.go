@@ -80,6 +80,12 @@ func TestRepeatedPrompts(t *testing.T) {
 			return "continue"
 		}), false},
 		{"varied prompts", steady(8, 3, []float64{0, 1, 3, 2, 5, 6, 7, 8}, varied), false},
+		{"one prompt three times among sixteen is normal", steady(16, 3, nil, func(i int) string {
+			if i%5 == 0 {
+				return "run the tests and fix whatever fails"
+			}
+			return fmt.Sprintf("%s (part %c)", varied(i), 'a'+i)
+		}), false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
