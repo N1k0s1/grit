@@ -1,0 +1,19 @@
+{{define "content"}}
+<section class="profile-head">
+  <div><h1>This week</h1><p class="muted">The last 7 days, best day {{.Best.Day.Format "Monday"}} with {{dur .Best.Credited}}.</p></div>
+  <div class="stats">
+    <div class="stat accent"><b>{{dur .Total}}</b><span>credited</span></div>
+    <div class="stat"><b>{{pct .Total .Wall}}%</b><span>focus</span></div>
+    <div class="stat"><b>{{.Prompts}}</b><span>prompts</span></div>
+    <div class="stat"><b>{{dur .Hand}}</b><span>hand-written code</span></div>
+  </div>
+</section>
+<section class="card">
+  <div class="card-head"><h2>Day by day</h2>{{if .Goal}}<span class="muted">goal {{dur .GoalSec}}, {{pct .Total .GoalSec}}% reached</span>{{end}}</div>
+  {{range .Days}}<div class="bar-row"><div>{{.Day.Format "Mon 2 Jan"}} <span class="meta">{{.Prompts}} prompts</span></div><div class="num strong">{{dur .Credited}}</div><div class="track"><div class="fill" style="width:{{pct .Credited $.Max}}%"></div></div></div>{{end}}
+</section>
+<div class="grid2">
+  <section class="card"><h2>Projects</h2>{{range .Top}}<div class="bar-row"><div><b>{{.Name}}</b></div><div class="num">{{dur .Sec}}</div><div class="track"><div class="fill" style="width:{{pct .Sec $.Total}}%"></div></div></div>{{else}}<p class="muted">Nothing this week.</p>{{end}}</section>
+  <section class="card"><h2>Edits</h2><p>Files written by agents: <b>{{.AgentEdits}}</b>. By you: <b>{{.HandEdits}}</b>.</p></section>
+</div>
+{{end}}

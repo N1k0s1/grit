@@ -1,0 +1,26 @@
+{{define "content"}}
+<p class="crumbs"><a href="/submit">Submit</a> / {{.Project}}</p>
+<section class="profile-head">
+  <div><h1>{{.Project}}</h1><p class="muted">This is the whole submission. Prompts and commands are shown after redaction: API keys, tokens, emails and passwords are replaced.</p></div>
+  <div class="stats">
+    <div class="stat accent"><b>{{dur .Total}}</b><span>credited</span></div>
+    <div class="stat"><b>{{len .B.Sessions}}</b><span>sessions</span></div>
+    <div class="stat"><b>{{.Bytes}}</b><span>bytes</span></div>
+  </div>
+</section>
+<section class="card">
+  {{if .LoggedIn}}
+  <form method="post" action="{{.Action}}" class="decide">
+    <label>Note for the reviewer <input name="note" placeholder="What you built and where to find it"></label>
+    <div class="row"><button>Send to {{.Server}}</button></div>
+  </form>
+  {{else}}<p>Run <code>grit login</code> to submit.</p>{{end}}
+</section>
+{{range .B.Sessions}}
+<section class="card">
+  <div class="card-head"><h2>{{when .Start}} <span class="muted">· {{.Harness}}</span></h2><b>{{dur .CreditedSec}}</b></div>
+  {{range .Turns}}<div class="prompt">{{.PromptText}}</div>{{range .Commands}}<div class="mono muted clip">$ {{.}}</div>{{end}}{{end}}
+</section>
+{{end}}
+<section class="card"><details><summary>The exact JSON that would be sent</summary><pre class="mono small">{{.JSON}}</pre></details></section>
+{{end}}

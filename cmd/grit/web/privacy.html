@@ -1,0 +1,26 @@
+{{define "content"}}
+<h1>Privacy</h1>
+<section class="card">
+  <h2>Pause</h2>
+  {{if .Paused}}
+  <p>grit is paused. Nothing is sampled, no edits are logged, nothing is synced, and AI sessions that start now are never counted, even after you resume.</p>
+  <form method="post" action="/privacy/resume"><button>Resume</button></form>
+  {{else}}
+  <p>Pause stops grit completely until you resume: no activity, no edits, no sync, and sessions started while paused are never counted.</p>
+  <form method="post" action="/privacy/pause"><button class="secondary">Pause grit</button></form>
+  {{end}}
+</section>
+<section class="card">
+  <h2>Excluded folders</h2>
+  <p class="muted">grit never reads, walks, runs git in or syncs anything inside these folders. ~ is your home folder; the last part can use * as a wildcard.</p>
+  <table class="board"><tbody>
+  {{range .Excluded}}<tr><td class="mono">{{.}}</td><td class="num"><form method="post" action="/privacy/include"><input type="hidden" name="path" value="{{.}}"><button class="secondary">Remove</button></form></td></tr>{{else}}<tr><td class="muted">Nothing excluded.</td></tr>{{end}}
+  </tbody></table>
+  <form method="post" action="/privacy/exclude" class="decide row"><label>Folder <input name="path" placeholder="~/Documents/private" required></label><button>Exclude</button></form>
+</section>
+<section class="card">
+  <h2>Exactly what was sent</h2>
+  <p class="muted">Every sync and submission, byte for byte, newest first. Syncs carry numbers, timings, rule strings and hashes, never prompt text, file names or commands.</p>
+  {{range .Sent}}<details><summary>{{when .At}} · {{.Kind}} of {{.Sessions}} sessions to {{.Server}} <span class="muted">({{.Bytes}} bytes)</span></summary><pre class="mono small">{{.JSON}}</pre></details>{{else}}<p class="muted">Nothing has been sent from this computer yet.</p>{{end}}
+</section>
+{{end}}

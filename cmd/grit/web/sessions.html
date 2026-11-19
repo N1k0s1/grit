@@ -1,0 +1,8 @@
+{{define "content"}}
+<h1>Sessions</h1>
+<section class="card">
+<table class="board"><thead><tr><th>When</th><th>Project</th><th>Tool</th><th class="num">Prompts</th><th class="num">Edits AI / hand</th><th class="num">Session</th><th class="num">Credited</th><th>Signal</th><th>Flags</th></tr></thead><tbody>
+{{range .Sessions}}<tr><td><a href="/s/{{.SessionID}}">{{when .Start}}</a></td><td>{{.Project}}</td><td class="muted">{{.Harness}}</td><td class="num">{{.Prompts}}</td><td class="num">{{.AgentEdits}} / {{.HandEdits}}</td><td class="num muted">{{dur .WallSec}}</td><td class="num strong">{{dur .CreditedSec}}</td><td>{{if eq .Signal "activity"}}<span class="att witnessed">activity</span>{{else}}<span class="att none">timestamps</span>{{end}}</td><td>{{range .Flags}}<span class="flag">{{.}}</span>{{end}}</td></tr>{{else}}<tr><td colspan="9" class="muted">No sessions yet.</td></tr>{{end}}
+</tbody></table>
+</section>
+{{end}}

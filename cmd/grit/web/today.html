@@ -1,0 +1,28 @@
+{{define "content"}}
+<section class="profile-head">
+  <div>
+    <h1>Today</h1>
+    <p class="muted">{{if .SignalErr}}No keyboard and mouse signal on this system: sessions use timestamps only.{{else}}Activity signal: {{.Signal}}, last input {{.Idle}} ago.{{end}} Updates every 30 seconds.</p>
+  </div>
+  <div class="stats">
+    <div class="stat accent"><b>{{dur .Today}}</b><span>credited today</span></div>
+    <div class="stat"><b>{{.Prompts}}</b><span>prompts today</span></div>
+    <div class="stat"><b>{{dur .Week}}</b><span>last 7 days</span></div>
+    <div class="stat"><b>{{pct .Week .Wall}}%</b><span>focus this week</span></div>
+  </div>
+</section>
+<section class="card">
+  <div class="card-head"><h2>Weekly goal</h2>{{if .Goal}}<b>{{dur .Week}} of {{dur .GoalSec}}</b>{{end}}</div>
+  {{if .Goal}}<div class="track"><div class="fill" style="width:{{pct .Week .GoalSec}}%"></div></div>{{end}}
+  <form method="post" action="/goal" class="decide row">
+    <label>Hours per week <input name="weekly_hours" type="number" step="0.5" min="0" max="168" value="{{.Goal}}"></label>
+    <button class="secondary">Set goal</button>
+  </form>
+</section>
+<section class="card">
+  <h2>Projects</h2>
+  <table class="board"><thead><tr><th>Project</th><th class="num">Today</th><th class="num">7 days</th><th class="num">Session time</th><th class="num">Sessions</th></tr></thead><tbody>
+  {{range .Rows}}<tr><td><b>{{.Name}}</b></td><td class="num strong">{{dur .Today}}</td><td class="num">{{dur .Week}}</td><td class="num muted">{{dur .Wall}}</td><td class="num">{{.Sessions}}</td></tr>{{else}}<tr><td colspan="5" class="muted">No AI sessions in the last 7 days.</td></tr>{{end}}
+  </tbody></table>
+</section>
+{{end}}

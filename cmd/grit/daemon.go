@@ -63,6 +63,14 @@ func daemon(args []string) {
 	home := collect.HomeDir()
 	sc := scan.New(home)
 	w := &edits.Watcher{}
+	snap := &snapshot{}
+	if d, err := newDash(home, snap.get); err != nil {
+		fmt.Fprintln(os.Stderr, "dashboard:", err)
+	} else if u, err := d.serve(); err != nil {
+		fmt.Fprintln(os.Stderr, "dashboard:", err)
+	} else {
+		fmt.Println("grit daemon: local dashboard at " + u + " (open it with grit open)")
+	}
 	go startSampler(context.Background())
 	c := loadConfig()
 	if c.Server == "" || c.Key == "" {
@@ -72,6 +80,10 @@ func daemon(args []string) {
 	}
 	var last time.Time
 	for {
+		if paused, _ := scan.Paused(home); paused {
+			time.Sleep(*every) // nothing is sampled, logged or synced
+			continue
+		}
 		// Files written in recently active projects. The first pass over a
 		// project is a baseline; later passes log what changed.
 		w.SetRoots(sc.Roots())
@@ -89,6 +101,9 @@ func daemon(args []string) {
 		last = time.Now()
 		before := sc.BytesRead()
 		rs, err := sc.Run(time.Now().AddDate(0, 0, -30))
+		if err == nil {
+			snap.set(rs)
+		}
 		if sc.BytesRead()-before > 8<<20 {
 			// A big read (the first pass over old logs) leaves garbage the
 			// runtime would hand back only slowly. Return it now.

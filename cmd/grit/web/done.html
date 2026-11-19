@@ -1,0 +1,13 @@
+{{define "content"}}
+<section class="card narrow">
+  {{if .Error}}
+  <h1>Not submitted</h1>
+  <p class="flag">{{.Error}}</p>
+  <p><a href="/submit/{{.Project}}">Back to the preview</a></p>
+  {{else}}
+  <h1>Submitted</h1>
+  <p>{{dur .Total}} across {{.Sessions}} sessions of {{.Project}} went to review.</p>
+  <p><a href="{{.URL}}" rel="noopener">See it on the review page</a></p>
+  {{end}}
+</section>
+{{end}}

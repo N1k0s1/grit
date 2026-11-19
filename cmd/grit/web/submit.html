@@ -1,0 +1,10 @@
+{{define "content"}}
+<h1>Submit hours</h1>
+<p class="muted">Pick a project to see exactly what a submission would send before anything leaves this computer.</p>
+{{if not .LoggedIn}}<section class="card"><p>You are not logged in. Run <code>grit login</code> first; you can still preview.</p></section>{{end}}
+<section class="card">
+<table class="board"><thead><tr><th>Project</th><th class="num">Sessions</th><th class="num">Credited</th><th></th></tr></thead><tbody>
+{{range .Rows}}<tr><td><b>{{.Name}}</b></td><td class="num">{{.Sessions}}</td><td class="num strong">{{dur .Week}}</td><td class="num"><a href="/submit/{{.Name}}">Preview</a></td></tr>{{else}}<tr><td colspan="4" class="muted">No sessions yet.</td></tr>{{end}}
+</tbody></table>
+</section>
+{{end}}

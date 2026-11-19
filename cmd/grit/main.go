@@ -37,6 +37,8 @@ const usage = `grit: time tracking for building with AI
                             send a project's hours for review, with redacted prompts
   grit hook -harness NAME -kind prompt|agent|tool|stop
                             for harness hooks: reads the hook's JSON on stdin
+  grit open                 open the local dashboard (your own prompts, replay,
+                            weekly recap, goals, privacy, submit with preview)
   grit doctor               check tools, activity signal, daemon and login
   grit install              start the daemon at every login, and now
   grit uninstall [-purge]   stop it and remove it (-purge: delete all grit data)
@@ -113,6 +115,8 @@ func main() {
 		excludeCmd(args)
 	case "doctor":
 		doctor()
+	case "open":
+		openCmd(args)
 	case "install":
 		installCmd(args)
 	case "uninstall":
@@ -321,6 +325,7 @@ func sendChanged(rs []*model.Result, c config, verbose bool) (int, error) {
 	if err := call(c, "POST", "/api/v1/sessions", map[string]any{"sessions": send}, nil); err != nil {
 		return 0, err
 	}
+	logSent(c.Server, "sync", send)
 	if verbose {
 		for _, r := range send {
 			fmt.Printf("  %s %-24s %s credited\n", short(r.SessionID), r.Project, dur(r.CreditedSec))
@@ -329,28 +334,20 @@ func sendChanged(rs []*model.Result, c config, verbose bool) (int, error) {
 	return len(send), saveJSON("synced.json", state)
 }
 
-func submit(args []string) {
-	fs := flag.NewFlagSet("submit", flag.ExitOnError)
-	note := fs.String("note", "", "a line for the reviewer")
-	dry := fs.Bool("dry", false, "print exactly what would be sent, send nothing")
-	days := fs.Int("days", 90, "how far back")
-	var project string
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		project, args = args[0], args[1:]
-	}
-	_ = fs.Parse(args)
-	if project == "" {
-		die("usage: grit submit PROJECT [-note TEXT] [-dry]")
-	}
-	var b struct {
-		Project  string         `json:"project"`
-		Remote   string         `json:"remote"`
-		Note     string         `json:"note"`
-		Sessions []model.Result `json:"sessions"`
-	}
-	b.Project, b.Note = project, *note
+// bundle is what grit submit sends: full sessions with redacted prompts.
+type bundle struct {
+	Project  string         `json:"project"`
+	Remote   string         `json:"remote"`
+	Note     string         `json:"note"`
+	Sessions []model.Result `json:"sessions"`
+}
+
+// buildBundle collects a project's sessions with prompts and commands
+// redacted. The result is exactly what a submission sends.
+func buildBundle(rs []*model.Result, project, note string) (bundle, int) {
+	b := bundle{Project: project, Note: note}
 	total := 0
-	for _, r := range results(*days) {
+	for _, r := range rs {
 		if r.Project != project {
 			continue
 		}
@@ -370,6 +367,36 @@ func submit(args []string) {
 		total += x.CreditedSec
 		b.Sessions = append(b.Sessions, x)
 	}
+	return b, total
+}
+
+// sendBundle submits a bundle and returns the review page URL.
+func sendBundle(c config, b bundle) (string, error) {
+	var out struct {
+		ID         int64  `json:"id"`
+		ReviewPath string `json:"review_path"`
+	}
+	if err := call(c, "POST", "/api/v1/submissions", b, &out); err != nil {
+		return "", err
+	}
+	logSent(c.Server, "submission", b)
+	return strings.TrimRight(c.Server, "/") + out.ReviewPath, nil
+}
+
+func submit(args []string) {
+	fs := flag.NewFlagSet("submit", flag.ExitOnError)
+	note := fs.String("note", "", "a line for the reviewer")
+	dry := fs.Bool("dry", false, "print exactly what would be sent, send nothing")
+	days := fs.Int("days", 90, "how far back")
+	var project string
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		project, args = args[0], args[1:]
+	}
+	_ = fs.Parse(args)
+	if project == "" {
+		die("usage: grit submit PROJECT [-note TEXT] [-dry]")
+	}
+	b, total := buildBundle(results(*days), project, *note)
 	if len(b.Sessions) == 0 {
 		die("no sessions for project %q", project)
 	}
@@ -379,15 +406,11 @@ func submit(args []string) {
 		_ = enc.Encode(b)
 		return
 	}
-	c := loadConfig()
-	var out struct {
-		ID         int64  `json:"id"`
-		ReviewPath string `json:"review_path"`
-	}
-	if err := call(c, "POST", "/api/v1/submissions", b, &out); err != nil {
+	u, err := sendBundle(loadConfig(), b)
+	if err != nil {
 		die("%v", err)
 	}
-	fmt.Printf("submitted %s across %d sessions for review: %s%s\n", dur(total), len(b.Sessions), strings.TrimRight(c.Server, "/"), out.ReviewPath)
+	fmt.Printf("submitted %s across %d sessions for review: %s\n", dur(total), len(b.Sessions), u)
 }
 
 func hook(args []string) {
@@ -407,7 +430,8 @@ func hook(args []string) {
 // startSampler records keyboard and mouse activity (seconds since the last
 // input, never what was typed) into ~/.grit/activity until ctx ends.
 func startSampler(ctx context.Context) {
-	s := &activity.Sampler{Log: activity.Log{Dir: activity.DefaultDir(collect.HomeDir())}}
+	home := collect.HomeDir()
+	s := &activity.Sampler{Log: activity.Log{Dir: activity.DefaultDir(home)}, Paused: func() bool { ok, _ := scan.Paused(home); return ok }}
 	warned := false
 	s.Run(ctx, func(err error) {
 		if !warned {
@@ -471,4 +495,29 @@ func excludeCmd(args []string) {
 	for _, p := range pats {
 		fmt.Println("  " + p)
 	}
+}
+
+// sentDir keeps an exact copy of everything grit sends, so the person can
+// see it on the local dashboard. It never leaves the machine.
+func sentDir() string { return filepath.Join(gritDir(), "sent") }
+
+type sentEntry struct {
+	At      time.Time `json:"at"`
+	Server  string    `json:"server"`
+	Kind    string    `json:"kind"` // sync or submission
+	Payload any       `json:"payload"`
+}
+
+func logSent(server, kind string, payload any) {
+	if err := os.MkdirAll(sentDir(), 0o700); err != nil {
+		return
+	}
+	now := time.Now().UTC()
+	f, err := os.OpenFile(filepath.Join(sentDir(), now.Format("2006-01-02")+".jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	b, _ := json.Marshal(sentEntry{At: now, Server: server, Kind: kind, Payload: payload})
+	_, _ = f.Write(append(b, '\n'))
 }

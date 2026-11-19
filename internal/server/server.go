@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"io/fs"
 	"log"
 	"net/http"
 	"regexp"
@@ -24,6 +23,7 @@ import (
 	"github.com/n1k0s1/grit/internal/model"
 	"github.com/n1k0s1/grit/internal/score"
 	"github.com/n1k0s1/grit/internal/store"
+	"github.com/n1k0s1/grit/internal/webstatic"
 )
 
 //go:embed web
@@ -97,8 +97,7 @@ func Dur(sec int) string {
 // Handler returns the routed handler.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	static, _ := fs.Sub(webFS, "web/static")
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(webstatic.FS()))))
 
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("GET /how", s.how)

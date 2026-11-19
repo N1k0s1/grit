@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+{{if eq .Page "today"}}<meta http-equiv="refresh" content="30">{{end}}
+<title>{{.Title}} · grit on this computer</title>
+<link rel="icon" href="/static/icon.svg">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body data-page="local-{{.Page}}">
+<header class="top">
+  <a class="brand" href="/"><span class="dot"></span>grit <span class="muted small">on this computer</span></a>
+  <nav>
+    <a href="/">Today</a>
+    <a href="/sessions">Sessions</a>
+    <a href="/week">Week</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/submit">Submit</a>
+  </nav>
+</header>
+{{if .Paused}}<div class="banner">grit is paused{{if not .PausedSince.IsZero}} since {{when .PausedSince}}{{end}}: nothing is recorded or sent. <a href="/privacy">Resume</a></div>{{end}}
+{{if .Loading}}<div class="banner">Reading your AI tools' logs for the first time. Refresh in a moment.</div>{{end}}
+<main>{{template "content" .}}</main>
+<footer>This dashboard only exists on this computer. Your prompts shown here are never uploaded unless you submit hours.</footer>
+</body>
+</html>

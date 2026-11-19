@@ -1,0 +1,37 @@
+{{define "content"}}
+<p class="crumbs"><a href="/sessions">Sessions</a> / {{short .S.SessionID}}</p>
+<section class="profile-head">
+  <div><h1>{{.S.Project}}</h1><p class="muted">{{.S.Harness}}{{if .S.Model}} · {{.S.Model}}{{end}} · {{when .S.Start}}</p>
+  {{if eq .S.Signal "activity"}}<span class="att witnessed">scored with activity</span>{{else}}<span class="att none">timestamps only</span>{{end}}
+  {{range .S.Flags}}<span class="flag">{{.}}</span>{{end}}</div>
+  <div class="stats">
+    <div class="stat"><b>{{dur .S.CreditedSec}}</b><span>credited</span></div>
+    <div class="stat"><b>{{dur .S.WallSec}}</b><span>session</span></div>
+    <div class="stat"><b>{{dur .S.AgentSec}}</b><span>agent ran</span></div>
+    <div class="stat"><b>{{.S.AgentEdits}} / {{.S.HandEdits}}</b><span>edits AI / hand</span></div>
+  </div>
+</section>
+{{if .S.Turns}}
+<section class="card">
+  <h2>Replay</h2>
+  <p class="muted small">Your own prompts, files and commands, as your AI tool logged them. They stay on this computer.</p>
+  <table class="board turns">
+    <colgroup><col style="width:72px"><col style="width:42%"><col><col></colgroup>
+    <thead><tr><th>Time</th><th>You wrote</th><th>Counted</th><th>The agent did</th></tr></thead><tbody>
+    {{range .S.Turns}}<tr>
+      <td class="muted small">{{hm .PromptAt}}</td>
+      <td><div class="prompt">{{.PromptText}}</div>{{range .Flags}}<span class="flag sm">{{.}}</span>{{end}}</td>
+      <td class="small"><b>{{dur .ThinkSec}}</b> before: <span class="muted">{{.ThinkRule}}</span><br><b>{{dur .AgentCreditSec}}</b> of {{dur .AgentSec}} run: <span class="muted">{{.AgentRule}}</span></td>
+      <td class="small">{{.ToolCalls}} tool calls, until {{hm .AgentEnd}}{{range .Files}}<div class="mono clip" title="{{.}}">{{.}}</div>{{end}}{{range .Commands}}<div class="mono muted clip" title="{{.}}">$ {{.}}</div>{{end}}</td>
+    </tr>{{end}}
+  </tbody></table>
+</section>
+{{end}}
+<section class="card">
+  <h2>Every credited stretch</h2>
+  <table class="board"><thead><tr><th>From</th><th>To</th><th class="num">Length</th><th>Kind</th><th>Rule</th></tr></thead><tbody>
+  {{range .S.Intervals}}<tr><td>{{hm .Start}}</td><td>{{hm .End}}</td><td class="num">{{dur .Seconds}}</td><td>{{.Kind}}</td><td class="muted small">{{.Rule}}</td></tr>{{else}}<tr><td colspan="5" class="muted">Nothing credited.</td></tr>{{end}}
+  </tbody></table>
+  {{if .S.OverlapSec}}<p class="muted small">{{dur .S.OverlapSec}} removed because another session was counting the same time.</p>{{end}}
+</section>
+{{end}}
