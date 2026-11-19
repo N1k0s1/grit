@@ -1,0 +1,33 @@
+{{define "content"}}
+<article class="prose">
+<h1>How time is counted</h1>
+<p>An agent can work for an hour while you are making dinner. So grit never counts how long a session lasted or how long the agent ran. It counts the minutes where the timestamps show a person was steering, and it writes down the reason for every one of them.</p>
+
+<h2>What grit reads</h2>
+<p>Claude Code and Codex already save every session to your disk. grit reads those files in the background, so there is nothing to start or stop. Tools without local logs (Cursor, Windsurf, browser chat) report through a one-line hook that calls <code>grit hook</code>. Adding a new tool means adding one small collector.</p>
+
+<h2>The rules</h2>
+<table class="board">
+<thead><tr><th>Moment</th><th>What counts</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Before your first prompt</td><td>A typing estimate for that prompt (20 seconds to 4 minutes)</td><td>You had to think it up.</td></tr>
+<tr><td>Agent finishes, you reply within 10 minutes</td><td>The whole gap</td><td>You were reading the output, testing, deciding what next.</td></tr>
+<tr><td>Agent finishes, you reply after more than 10 minutes</td><td>Only a typing estimate</td><td>You were probably away.</td></tr>
+<tr><td>"continue", "yes", "ok" and other bare go-aheads</td><td>At most 90 seconds before them</td><td>Rubber-stamping is not struggle.</td></tr>
+<tr><td>While the agent runs, if you come back within 2 minutes of it finishing</td><td>The run, up to 8 minutes</td><td>You were watching it work.</td></tr>
+<tr><td>While the agent runs, if you came back later</td><td>The first minute</td><td>You saw it start, then left.</td></tr>
+<tr><td>After the last turn</td><td>2 minutes</td><td>Checking the result.</td></tr>
+<tr><td>Two sessions at the same moment</td><td>Once</td><td>You only have one brain. Overlap is removed before syncing.</td></tr>
+</tbody>
+</table>
+
+<h2>Flags</h2>
+<p><b>autopilot</b>: at least half the prompts are bare go-aheads. <b>mostly-agent</b>: the agent ran more than four times as long as the credited time. <b>long-idle</b>: under a fifth of a session over an hour was credited. Flags do not remove time on their own. They tell a reviewer where to look.</p>
+
+<h2>Privacy</h2>
+<p>Logged hours sync as numbers only: when each session started and stopped, how much was credited, how many prompts and tool calls. No prompt text, file names or commands leave your machine. When you submit hours for a project, grit uploads that project's prompts with API keys, tokens, emails and passwords scrubbed out, so a reviewer can check the work. Submitting is always something you do on purpose.</p>
+
+<h2>What it cannot prove</h2>
+<p>Someone can still script fake prompts every few minutes. That is why submitted hours come with the full evidence: a reviewer can read the prompts, see whether they build on each other, and match them to commits. Version two adds a local keyboard and mouse activity signal, which makes scripted sessions far easier to spot.</p>
+</article>
+{{end}}

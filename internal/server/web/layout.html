@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Title}} · grit</title>
+<link rel="icon" href="/static/icon.svg">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body data-page="{{.Page}}">
+<header class="top">
+  <a class="brand" href="/"><span class="dot"></span>grit</a>
+  <nav>
+    <a href="/">Leaderboard</a>
+    <a href="/how">How it counts</a>
+    <a href="/review">Review</a>
+  </nav>
+</header>
+{{if demo}}<div class="banner">Demo server: review pages are open to everyone, and accounts other than real synced ones are generated examples.</div>{{end}}
+<main>{{template "content" .}}</main>
+<footer>grit counts the time you spend steering, not the time your agent runs. Open source under AGPLv3. Prompts stay on your machine unless you submit hours.</footer>
+</body>
+</html>

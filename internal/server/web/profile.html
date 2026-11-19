@@ -1,0 +1,22 @@
+{{define "content"}}
+<script id="data" type="application/json">{{json .Profile}}</script>
+<section class="profile-head">
+  <div>
+    <h1>{{.User.Username}}</h1>
+    <p class="muted">Building since {{.User.CreatedAt.Format "2 January 2006"}} · <span class="live-dot"><span class="pulse"></span>live</span></p>
+  </div>
+  <div class="stats" id="kpis"></div>
+</section>
+<section class="card">
+  <div class="card-head"><h2>Last 14 days</h2><div class="legend"><span class="sw you"></span>you (credited)<span class="sw agent"></span>agent ran</div></div>
+  <div id="daily" class="daily"></div>
+</section>
+<div class="grid2">
+  <section class="card"><h2>Projects</h2><div id="projects"></div></section>
+  <section class="card"><h2>Tools</h2><div id="harnesses"></div><h2 class="mt">Submissions</h2><div id="subs"></div></section>
+</div>
+<section class="card">
+  <h2>Recent sessions</h2>
+  <table class="board"><thead><tr><th>When</th><th>Project</th><th>Tool</th><th class="num">Prompts</th><th class="num">Session</th><th class="num">Credited</th><th>Flags</th></tr></thead><tbody id="sessions"></tbody></table>
+</section>
+{{end}}

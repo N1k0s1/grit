@@ -1,0 +1,28 @@
+{{define "content"}}
+<section class="hero">
+  <h1>Time tracking for building with AI.</h1>
+  <p class="lede">Agents can run for hours on their own. grit reads the session logs your AI tools already keep and credits only the time you spent prompting, reading, testing and steering. Install it once and forget it.</p>
+  <div class="stats">
+    <div class="stat"><b data-k="credited">{{hours .Totals.Credited}}h</b><span>credited to humans</span></div>
+    <div class="stat"><b data-k="wall">{{hours .Totals.Wall}}h</b><span>of agent sessions</span></div>
+    <div class="stat"><b data-k="users">{{.Totals.Users}}</b><span>builders</span></div>
+  </div>
+</section>
+<div class="grid2">
+  <section class="card">
+    <h2>Last 7 days</h2>
+    <table class="board" id="board">
+      <thead><tr><th>#</th><th>Builder</th><th class="num">Credited</th><th class="num">Session time</th><th class="num">Focus</th><th>Top project</th></tr></thead>
+      <tbody>
+      {{range $i, $r := .Rows}}
+      <tr><td class="muted">{{add $i 1}}</td><td><a href="/u/{{$r.Username}}">{{$r.Username}}</a></td><td class="num strong">{{dur $r.Credited}}</td><td class="num muted">{{dur $r.Wall}}</td><td class="num"><span class="focus" style="--p:{{pct $r.Credited $r.Wall}}">{{pct $r.Credited $r.Wall}}%</span></td><td class="muted">{{$r.Top}}</td></tr>
+      {{else}}<tr><td colspan="6" class="muted">Nobody has synced yet.</td></tr>{{end}}
+      </tbody>
+    </table>
+  </section>
+  <section class="card">
+    <h2><span class="pulse"></span>Live</h2>
+    <ul class="feed" id="feed"><li class="muted">Waiting for the next sync...</li></ul>
+  </section>
+</div>
+{{end}}

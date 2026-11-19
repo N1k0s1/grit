@@ -1,0 +1,26 @@
+{{define "content"}}
+<p class="crumbs"><a href="/u/{{.User.Username}}">{{.User.Username}}</a> / {{.Project.Name}}</p>
+<section class="profile-head">
+  <div><h1>{{.Project.Name}}</h1>{{if .Project.Remote}}<p><a href="{{.Project.Remote}}" rel="noopener">{{.Project.Remote}}</a></p>{{end}}</div>
+  <div class="stats">
+    <div class="stat"><b>{{dur .Project.Credited}}</b><span>credited</span></div>
+    <div class="stat"><b>{{dur .Project.Wall}}</b><span>session time</span></div>
+    <div class="stat"><b>{{.Project.Sessions}}</b><span>sessions</span></div>
+    <div class="stat"><b>{{.Project.Commits}}</b><span>commits</span></div>
+  </div>
+</section>
+<div class="grid2">
+<section class="card">
+  <h2>Sessions</h2>
+  <table class="board"><thead><tr><th>Started</th><th>Tool</th><th class="num">Prompts</th><th class="num">Credited</th><th>Flags</th></tr></thead><tbody>
+  {{range .Sessions}}<tr><td><a href="/u/{{$.User.Username}}/s/{{.ID}}" data-ts="{{.Start}}">{{unix .Start}}</a></td><td class="muted">{{.Harness}}</td><td class="num">{{.Prompts}}</td><td class="num strong">{{dur .Credited}}</td><td>{{range .Flags}}<span class="flag">{{.}}</span>{{end}}</td></tr>{{end}}
+  </tbody></table>
+</section>
+<section class="card">
+  <h2>Commits</h2>
+  <ul class="commits">
+  {{range .Commits}}<li>{{$u := commitURL $.Project.Remote .SHA}}{{if $u}}<a class="sha" href="{{$u}}" rel="noopener">{{short .SHA}}</a>{{else}}<span class="sha">{{short .SHA}}</span>{{end}} {{.Subject}} <span class="muted">+{{.Additions}} -{{.Deletions}}</span></li>{{else}}<li class="muted">No commits linked yet.</li>{{end}}
+  </ul>
+</section>
+</div>
+{{end}}

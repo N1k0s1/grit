@@ -1,0 +1,22 @@
+{{define "content"}}
+<script id="data" type="application/json">{{json .S}}</script>
+<p class="crumbs"><a href="/u/{{.User.Username}}">{{.User.Username}}</a> / <a href="/u/{{.User.Username}}/p/{{.S.Project}}">{{.S.Project}}</a> / session</p>
+<section class="profile-head">
+  <div><h1>{{.S.Project}}</h1><p class="muted">{{.S.Harness}}{{if .S.Model}} · {{.S.Model}}{{end}} · {{when .S.Start}}</p>
+  {{range .S.Flags}}<span class="flag">{{.}}</span>{{end}}</div>
+  <div class="stats">
+    <div class="stat"><b>{{dur .S.CreditedSec}}</b><span>credited</span></div>
+    <div class="stat"><b>{{dur .S.WallSec}}</b><span>session</span></div>
+    <div class="stat"><b>{{dur .S.AgentSec}}</b><span>agent ran</span></div>
+    <div class="stat"><b>{{.S.Prompts}}</b><span>prompts</span></div>
+  </div>
+</section>
+<section class="card"><div class="card-head"><h2>Timeline</h2><div class="legend"><span class="sw you"></span>credited<span class="sw agent"></span>agent running<span class="sw tick"></span>prompt</div></div><div class="timeline" data-session></div></section>
+<section class="card">
+  <h2>Turns</h2>
+  <p class="muted small">Prompt text is private. It is only shared with reviewers when hours are submitted.</p>
+  <table class="board turns"><thead><tr><th>#</th><th class="num">Chars</th><th>Before the prompt</th><th>During the run</th><th class="num">Tools</th></tr></thead><tbody>
+  {{range .S.Turns}}<tr><td class="muted">{{.Index}}</td><td class="num">{{.PromptChars}}</td><td><b>{{dur .ThinkSec}}</b> <span class="muted">{{.ThinkRule}}</span></td><td><b>{{dur .AgentCreditSec}}</b> of {{dur .AgentSec}} <span class="muted">{{.AgentRule}}</span></td><td class="num">{{.ToolCalls}}</td></tr>{{end}}
+  </tbody></table>
+</section>
+{{end}}

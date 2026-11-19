@@ -1,0 +1,71 @@
+{{define "content"}}
+<p class="crumbs"><a href="/review">Review queue</a> / #{{.Sub.ID}}</p>
+<section class="profile-head">
+  <div>
+    <h1>{{.Sub.Project}} <span class="muted">by <a href="/u/{{.Sub.Username}}">{{.Sub.Username}}</a></span></h1>
+    {{if .B.Remote}}<p><a href="{{.B.Remote}}" rel="noopener">{{.B.Remote}}</a></p>{{end}}
+    {{if .B.Note}}<p class="note">"{{.B.Note}}"</p>{{end}}
+  </div>
+  <div class="stats">
+    <div class="stat"><b>{{dur .Sub.Credited}}</b><span>claimed</span></div>
+    <div class="stat"><b>{{dur .Sub.Wall}}</b><span>session time</span></div>
+    <div class="stat"><b>{{dur .Agent}}</b><span>agent ran</span></div>
+    <div class="stat"><b>{{.CommitCount}}</b><span>commits</span></div>
+  </div>
+</section>
+
+<div class="grid2">
+<section class="card">
+  <h2>Signals</h2>
+  <ul class="signals">
+    <li><b>{{.Sub.Sessions}}</b> sessions, <b>{{.Flagged}}</b> flagged</li>
+    <li><b>{{.Prompts}}</b> prompts: <b>{{.Debug}}</b> debugging, <b>{{.Low}}</b> bare go-aheads ("continue", "yes")</li>
+    <li>Focus: <b>{{pct .Sub.Credited .Sub.Wall}}%</b> of session time credited</li>
+    <li>Parallel sessions removed <b>{{dur .Overlap}}</b> of double counting before submission</li>
+  </ul>
+</section>
+<section class="card">
+  <h2>Decision</h2>
+  <p>Status: <span class="status {{.Sub.Status}}">{{.Sub.Status}}</span>{{if .Sub.Approved}} at {{dur (deref .Sub.Approved)}}{{end}}{{if .Sub.Note}}: {{.Sub.Note}}{{end}}</p>
+  <form method="post" class="decide">
+    <label>Approved hours <input name="approved_hours" type="number" step="0.1" min="0" value="{{hours .Sub.Credited}}"></label>
+    <label>Note <input name="note" placeholder="Why"></label>
+    <div class="row">
+      <button name="status" value="approved">Approve</button>
+      <button name="status" value="deflated" class="secondary">Deflate</button>
+      <button name="status" value="rejected" class="danger">Reject</button>
+    </div>
+  </form>
+</section>
+</div>
+
+{{range $i, $s := .B.Sessions}}
+<section class="card session-block">
+  <div class="card-head">
+    <h2>{{when $s.Start}} <span class="muted">· {{$s.Harness}}{{if $s.Model}} · {{$s.Model}}{{end}}{{if $s.Branch}} · {{$s.Branch}}{{end}}</span></h2>
+    <div>{{range $s.Flags}}<span class="flag">{{.}}</span>{{end}} <b>{{dur $s.CreditedSec}}</b> <span class="muted">of {{dur $s.WallSec}}</span></div>
+  </div>
+  <div class="timeline" data-idx="{{$i}}"></div>
+  <details {{if eq (len $.B.Sessions) 1}}open{{end}}>
+    <summary>{{$s.Prompts}} prompts, {{$s.ToolCalls}} tool calls, {{$s.FilesTouched}} files, {{len $s.Commits}} commits</summary>
+    <table class="board turns">
+      <colgroup><col style="width:36px"><col style="width:40%"><col style="width:18%"><col style="width:18%"><col></colgroup>
+      <thead><tr><th>#</th><th>Prompt</th><th>Before</th><th>Run</th><th>Agent did</th></tr></thead>
+      <tbody>
+      {{range $s.Turns}}
+      <tr class="{{range .Flags}}f-{{.}} {{end}}">
+        <td class="muted">{{.Index}}</td>
+        <td><div class="prompt">{{.PromptText}}</div>{{range .Flags}}<span class="flag sm">{{.}}</span>{{end}}</td>
+        <td><b>{{dur .ThinkSec}}</b><div class="muted small">{{.ThinkRule}}</div></td>
+        <td><b>{{dur .AgentCreditSec}}</b> / {{dur .AgentSec}}<div class="muted small">{{.AgentRule}}</div></td>
+        <td class="small">{{.ToolCalls}} tools{{range .Files}}<div class="mono clip" title="{{.}}">{{.}}</div>{{end}}{{range .Commands}}<div class="mono muted clip" title="{{.}}">$ {{.}}</div>{{end}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{if $s.Commits}}<ul class="commits">{{range $s.Commits}}<li>{{$u := commitURL $.B.Remote .SHA}}{{if $u}}<a class="sha" href="{{$u}}" rel="noopener">{{short .SHA}}</a>{{else}}<span class="sha">{{short .SHA}}</span>{{end}} {{.Subject}} <span class="muted">+{{.Additions}} -{{.Deletions}} · {{when .At}}</span></li>{{end}}</ul>{{end}}
+  </details>
+</section>
+{{end}}
+<script id="data" type="application/json">{{json .B.Sessions}}</script>
+{{end}}
