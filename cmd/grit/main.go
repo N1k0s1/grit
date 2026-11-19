@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/n1k0s1/grit/internal/activity"
 	"github.com/n1k0s1/grit/internal/collect"
 	"github.com/n1k0s1/grit/internal/model"
 	"github.com/n1k0s1/grit/internal/redact"
@@ -34,6 +36,8 @@ const usage = `grit: time tracking for building with AI
                             send a project's hours for review, with redacted prompts
   grit hook -harness NAME -kind prompt|agent|tool|stop
                             for harness hooks: reads the hook's JSON on stdin
+  grit activity [-sample]   idle signal status and today's active minutes
+                            (-sample keeps recording, as watch does)
 `
 
 type config struct {
@@ -97,6 +101,8 @@ func main() {
 		submit(args)
 	case "hook":
 		hook(args)
+	case "activity":
+		activityCmd(args)
 	case "status":
 		status()
 	case "demo-live":
@@ -328,6 +334,7 @@ func watch(args []string) {
 	_ = fs.Parse(args)
 	c := loadConfig()
 	sc := scan.New(collect.HomeDir())
+	go startSampler(context.Background())
 	fmt.Printf("watching agent logs every %s, syncing to %s\n", *every, c.Server)
 	for {
 		n, err := syncOnce(sc, c, false)
@@ -412,5 +419,48 @@ func hook(args []string) {
 	raw, _ := io.ReadAll(io.LimitReader(os.Stdin, 4<<20))
 	if err := collect.AppendHook(collect.HomeDir(), collect.FromHookInput(*harness, *kind, raw)); err != nil {
 		die("%v", err)
+	}
+}
+
+// startSampler records keyboard and mouse activity (seconds since the last
+// input, never what was typed) into ~/.grit/activity until ctx ends.
+func startSampler(ctx context.Context) {
+	s := &activity.Sampler{Log: activity.Log{Dir: activity.DefaultDir(collect.HomeDir())}}
+	warned := false
+	s.Run(ctx, func(err error) {
+		if !warned {
+			fmt.Fprintln(os.Stderr, "activity:", err, "(sessions are scored with the v1 rules and marked lower trust)")
+			warned = true
+		}
+	})
+}
+
+func activityCmd(args []string) {
+	fs := flag.NewFlagSet("activity", flag.ExitOnError)
+	sample := fs.Bool("sample", false, "keep sampling every 15 seconds")
+	_ = fs.Parse(args)
+	d, src, err := activity.Idle()
+	if err != nil {
+		fmt.Println("idle signal: unknown on this system. Sessions are scored with the v1 rules and marked lower trust.")
+	} else {
+		fmt.Printf("idle signal: %s, last input %s ago\n", src, d.Round(time.Second))
+	}
+	log := activity.Log{Dir: activity.DefaultDir(collect.HomeDir())}
+	r := log.Reader()
+	now := time.Now().UTC()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	var active, seen int
+	for t := start; t.Before(now); t = t.Add(time.Minute) {
+		if r.Active(t) {
+			active++
+		}
+		if r.Seen(t) {
+			seen++
+		}
+	}
+	fmt.Printf("today (UTC): %d minutes with input, %d minutes sampled\n", active, seen)
+	if *sample {
+		fmt.Println("sampling every 15s, Ctrl-C to stop")
+		startSampler(context.Background())
 	}
 }
