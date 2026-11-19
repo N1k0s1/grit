@@ -2,7 +2,7 @@
 
 ## Done
 
-- Repo split out of the Personal workspace with its history (one commit: the MVP).
+- Repo split out of the Personal workspace with its history and pushed to https://github.com/N1k0s1/grit (public).
 - Workspace set up: CLAUDE.md, PLAN.md, TODO-NIKO.md, this file.
 
 ## Verified on a real machine
@@ -15,7 +15,7 @@ Codex collector (from the MVP).
 
 ## Blocked
 
-- Push: the GitHub repo does not exist yet and the shell's `GITHUB_TOKEN` is stale. See TODO-NIKO.md.
+- The shell's `GITHUB_TOKEN` is stale. Pushing works with `env -u GITHUB_TOKEN git push`. See TODO-NIKO.md.
 - Go is not installed on the dev Mac yet.
 
 ## Next
