@@ -25,3 +25,4 @@ Phase 0: install Go, baseline `go test ./...`, CI workflow, CONTRIBUTING.md. The
 ## Decisions
 
 - The repo split ran inside the new repo (fetching the branch from Personal) because `git subtree split` refuses a prefix that is not in the current working tree, and checking out in Personal was off limits.
+- Removed `docs/1-leaderboard-live.png` from all history before the first push. It showed a real synced account and a private project name. Screenshots must come from the demo seed only (Phase 5.3 retakes them).
