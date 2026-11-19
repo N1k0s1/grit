@@ -18,6 +18,7 @@ type Sampler struct {
 	Interval time.Duration                         // defaults to SampleEvery
 	Now      func() time.Time                      // defaults to time.Now
 	Idle     func() (time.Duration, string, error) // defaults to Idle
+	Paused   func() bool                           // when true, nothing is recorded
 
 	prev time.Time
 }
@@ -38,6 +39,10 @@ func (s *Sampler) defaults() {
 // nothing and returns ErrUnknown, so those minutes stay "no data".
 func (s *Sampler) Sample() error {
 	s.defaults()
+	if s.Paused != nil && s.Paused() {
+		s.prev = time.Time{}
+		return nil
+	}
 	now := s.Now()
 	idle, _, err := s.Idle()
 	if err != nil {

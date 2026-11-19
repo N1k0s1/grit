@@ -142,6 +142,7 @@ func (s *Scanner) Run(since time.Time) ([]*model.Result, error) {
 		act = s.Activity.Reader() // fresh per run so new samples show up
 	}
 	excl := LoadExclude(s.Home)
+	paused := pauses(s.Home)
 	var out []*model.Result
 	var runs []edits.Run
 	rootSet := map[string]bool{}
@@ -149,6 +150,9 @@ func (s *Scanner) Run(since time.Time) ([]*model.Result, error) {
 	for _, sess := range sessions {
 		if Excluded(excl, sess.Cwd) {
 			continue // before any git call: excluded folders are never touched
+		}
+		if len(sess.Events) > 0 && inPause(paused, firstAt(sess)) {
+			continue // started while grit was paused
 		}
 		if sess.Cwd != "" {
 			repo := gitinfo.Resolve(sess.Cwd)
@@ -191,7 +195,7 @@ func (s *Scanner) Run(since time.Time) ([]*model.Result, error) {
 		all, _ := edits.Read(s.EditsDir, since)
 		var changes []edits.Change
 		for _, c := range all {
-			if !Excluded(excl, c.Root) {
+			if !Excluded(excl, c.Root) && !inPause(paused, c.At) {
 				changes = append(changes, c)
 			}
 		}
@@ -240,6 +244,16 @@ func (s *Scanner) attest(r *model.Result) {
 		r.Turns[i].Link = h
 	}
 	r.Salt = hex.EncodeToString(salt)
+}
+
+func firstAt(s model.Session) time.Time {
+	t := s.Events[0].At
+	for _, e := range s.Events[1:] {
+		if e.At.Before(t) {
+			t = e.At
+		}
+	}
+	return t
 }
 
 // isGitRoot is true only for a real repository, so a session started in a

@@ -134,3 +134,16 @@ func TestSamplerUnknownMarksNothing(t *testing.T) {
 		t.Fatal("no signal means no data, not a quiet minute")
 	}
 }
+
+func TestSamplerPausedRecordsNothing(t *testing.T) {
+	l := Log{Dir: t.TempDir()}
+	now := day0.Add(14 * time.Hour)
+	s := Sampler{Log: l, Now: func() time.Time { return now }, Paused: func() bool { return true },
+		Idle: func() (time.Duration, string, error) { return time.Second, "fake", nil }}
+	if err := s.Sample(); err != nil {
+		t.Fatal(err)
+	}
+	if r := l.Reader(); r.Seen(now) || r.Active(now) {
+		t.Fatal("a paused sampler must record nothing")
+	}
+}

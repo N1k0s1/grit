@@ -198,3 +198,51 @@ func TestChanged(t *testing.T) {
 		t.Fatal("an appended line is a change")
 	}
 }
+
+func TestPausedSessionsAreDropped(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".claude", "projects", "-w", "p.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(id string, at time.Time) {
+		line := fmt.Sprintf(`{"type":"user","sessionId":%q,"timestamp":%q,"origin":{"kind":"human"},"message":{"role":"user","content":"start the level editor"}}`+"\n", id, at.UTC().Format(time.RFC3339))
+		if err := os.WriteFile(filepath.Join(filepath.Dir(path), id+".jsonl"), []byte(line), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("before", time.Now().Add(-2*time.Hour))
+	if err := Pause(home); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := Paused(home); !ok {
+		t.Fatal("not paused")
+	}
+	write("during", time.Now().Add(time.Second))
+	since := time.Now().Add(-24 * time.Hour)
+	ids := func() []string {
+		rs, _ := New(home).Run(since)
+		var out []string
+		for _, r := range rs {
+			out = append(out, r.SessionID)
+		}
+		return out
+	}
+	if got := ids(); len(got) != 1 || got[0] != "before" {
+		t.Fatalf("while paused: %v", got)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	if err := Resume(home); err != nil {
+		t.Fatal(err)
+	}
+	write("after", time.Now().Add(time.Second))
+	got := ids()
+	if len(got) != 2 {
+		t.Fatalf("after resuming, the paused session stays out: %v", got)
+	}
+	for _, id := range got {
+		if id == "during" {
+			t.Fatal("a session that started while paused was counted")
+		}
+	}
+}
