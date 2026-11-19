@@ -37,6 +37,8 @@ const usage = `grit: time tracking for building with AI
                             send a project's hours for review, with redacted prompts
   grit hook -harness NAME -kind prompt|agent|tool|stop
                             for harness hooks: reads the hook's JSON on stdin
+  grit exclude [add|rm PATH]
+                            folders grit never reads, walks or syncs
   grit activity [-sample]   idle signal status and today's active minutes
                             (-sample keeps recording, as watch does)
 `
@@ -104,6 +106,8 @@ func main() {
 		hook(args)
 	case "activity":
 		activityCmd(args)
+	case "exclude":
+		excludeCmd(args)
 	case "status":
 		status()
 	case "demo-live":
@@ -475,5 +479,31 @@ func activityCmd(args []string) {
 	if *sample {
 		fmt.Println("sampling every 15s, Ctrl-C to stop")
 		startSampler(context.Background())
+	}
+}
+
+func excludeCmd(args []string) {
+	home := collect.HomeDir()
+	if len(args) == 2 && (args[0] == "add" || args[0] == "rm") {
+		var err error
+		if args[0] == "add" {
+			err = scan.AddExclude(home, args[1])
+		} else {
+			err = scan.RemoveExclude(home, args[1])
+		}
+		if err != nil {
+			die("%v", err)
+		}
+	} else if len(args) != 0 {
+		die("usage: grit exclude [add PATH | rm PATH]")
+	}
+	pats := scan.LoadExclude(home)
+	if len(pats) == 0 {
+		fmt.Println("Nothing excluded. Add a folder with: grit exclude add ~/path")
+		return
+	}
+	fmt.Println("grit never reads, walks or syncs anything in:")
+	for _, p := range pats {
+		fmt.Println("  " + p)
 	}
 }

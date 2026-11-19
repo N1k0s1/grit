@@ -76,14 +76,18 @@ func (s *Scanner) Run(since time.Time) ([]*model.Result, error) {
 	if s.Activity.Dir != "" {
 		act = s.Activity.Reader() // fresh per run so new samples show up
 	}
+	excl := LoadExclude(s.Home)
 	var out []*model.Result
 	var runs []edits.Run
 	rootSet := map[string]bool{}
 	recent := time.Now().AddDate(0, 0, -7)
 	for _, sess := range sessions {
+		if Excluded(excl, sess.Cwd) {
+			continue // before any git call: excluded folders are never touched
+		}
 		if sess.Cwd != "" {
 			repo := gitinfo.Resolve(sess.Cwd)
-			if isGitRoot(repo) {
+			if isGitRoot(repo) && !Excluded(excl, repo.Root) {
 				sr := sessionRuns(sess, repo.Root)
 				runs = append(runs, sr...)
 				if n := len(sr); n > 0 && sr[n-1].End.After(recent) {
@@ -119,7 +123,13 @@ func (s *Scanner) Run(since time.Time) ([]*model.Result, error) {
 		out = append(out, &rr)
 	}
 	if s.EditsDir != "" {
-		changes, _ := edits.Read(s.EditsDir, since)
+		all, _ := edits.Read(s.EditsDir, since)
+		var changes []edits.Change
+		for _, c := range all {
+			if !Excluded(excl, c.Root) {
+				changes = append(changes, c)
+			}
+		}
 		hand, counts := edits.HandSessions(changes, runs, act, func(root string) string { return gitinfo.Resolve(root).Name })
 		for _, r := range out {
 			r.AgentEdits = counts.BySession[r.SessionID]

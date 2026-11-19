@@ -94,3 +94,31 @@ func TestHandAndAgentEdits(t *testing.T) {
 		t.Fatalf("hand credit %ds, want 150", handCredit)
 	}
 }
+
+func TestExcludedSessionsAreSkipped(t *testing.T) {
+	home := t.TempDir()
+	write := func(dir, id string) {
+		path := filepath.Join(home, ".claude", "projects", dir, id+".jsonl")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		ts := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)
+		body := fmt.Sprintf(`{"type":"user","sessionId":%q,"cwd":%q,"timestamp":%q,"origin":{"kind":"human"},"message":{"role":"user","content":"make the menu"}}
+`, id, filepath.Join(home, dir), ts)
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("game", "keep")
+	write("diary", "skip")
+	if err := AddExclude(home, "~/diary"); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := New(home).Run(time.Now().Add(-24 * time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rs) != 1 || rs[0].SessionID != "keep" {
+		t.Fatalf("got %d results, want only the session outside the excluded folder", len(rs))
+	}
+}
