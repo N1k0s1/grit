@@ -13,7 +13,7 @@ GRIT_HOME="$HOME_DIR" "$HOME_DIR/grit" daemon -every 30s >/dev/null 2>&1 &
 PID=$!
 peak=0
 # First pass: parse the whole file. Sample RSS until it has settled.
-for i in $(seq 1 60); do
+for _ in $(seq 1 60); do
   rss=$(ps -o rss= -p $PID | tr -d ' ')
   [ "$rss" -gt "$peak" ] && peak=$rss
   sleep 1
