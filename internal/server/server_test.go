@@ -32,6 +32,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { st.Close() }) // runs after the server closes; Windows cannot delete an open database
 	s, err := New(st, "")
 	if err != nil {
 		t.Fatal(err)

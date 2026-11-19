@@ -136,6 +136,9 @@ func Open(path string) (*Store, error) {
 	return &Store{db: db, Now: time.Now}, nil
 }
 
+// Close closes the database.
+func (s *Store) Close() error { return s.db.Close() }
+
 func hashKey(k string) string {
 	h := sha256.Sum256([]byte(k))
 	return hex.EncodeToString(h[:])

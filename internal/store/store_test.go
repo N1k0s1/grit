@@ -18,6 +18,7 @@ func open(t *testing.T) *Store {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { st.Close() }) // Windows cannot delete an open database
 	return st
 }
 
@@ -148,6 +149,7 @@ func TestMigratesOldDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { st.Close() })
 	u := user(t, st, "ava")
 	if err := st.UpsertSessions(u.ID, []model.Result{session("s1", "", "hello there agent")}); err != nil {
 		t.Fatal(err)
