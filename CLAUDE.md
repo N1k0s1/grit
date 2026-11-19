@@ -48,6 +48,8 @@ Every commit must pass `go vet ./...` and `go test ./...`.
 | `internal/activity` | Seconds since last input per OS, and the per-minute sampler |
 | `internal/edits` | Working tree polling and agent versus hand attribution |
 | `internal/attest` | Hash chain attestation of turns |
+| `internal/autostart` | Start at login per OS (LaunchAgent, XDG autostart, HKCU Run) |
+| `internal/webstatic` | Stylesheet and icon shared by the server and the local dashboard |
 | `internal/score` | Credited time rules, anomaly flags and cross-session dedupe |
 | `internal/scan` | Collect, link git, score, dedupe |
 | `internal/gitinfo` | Repo, remote and commits for a working directory |

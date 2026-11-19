@@ -15,6 +15,13 @@
 - **Phase 1.6, anomaly flags.** `regular-timing`, `repeated-prompts`, `no-input-prompts`, `no-output`. Flags only; a test checks credited time is identical with and without them. The review page recomputes them server side.
 - **Phase 1.7, trust tiers.** high, medium or low per session, stored at sync, shown on profiles, session pages and review.
 - Tests now cover activity, attest, collect, edits, redact, scan, score, server and store.
+- **Exclude list.** `~/.grit/exclude` and `grit exclude`: excluded folders are skipped before any git command runs in them, never walked and never synced. This Mac excludes Personal, KiwiHacks and Henry-Private.
+- **Phase 2.1.** `scripts/install.sh` and `scripts/install.ps1`: detect the system, download, verify the sha256 against `checksums.txt`, run `grit install`. CI runs PSScriptAnalyzer and shellcheck.
+- **Phase 2.2.** `grit install` and `grit uninstall [-purge]` with `internal/autostart`: LaunchAgent, XDG autostart, HKCU Run, by hand.
+- **Phase 2.3.** `grit daemon` (watch is an alias): incremental reading with a byte offset per file, folded agent events, typed decoding of Claude Code lines, a 16 MB Go memory cap, rescoring only on change. 200 MB transcript: 20 MB physical footprint, idle CPU 0.03%.
+- **Phase 2.4.** `grit login` opens the browser; the key comes back to a one-time loopback callback on 127.0.0.1 in a POST, checked against a random state.
+- **Phase 2.5.** Local dashboard in the daemon and `grit open`: today, goals, sessions with full local replay, weekly recap, pause, exclude, a byte-for-byte log of everything sent, submit with redacted preview. Token required on every request.
+- **Phase 2.6.** `grit doctor`.
 
 ## Verified on a real machine
 
@@ -26,11 +33,21 @@ This Mac (Apple Silicon, macOS), 19 Nov 2026:
 - Edits: `grit watch` logged a README change made by this agent and attributed it to the agent session (1 agent edit, 0 hand).
 - Collectors: Claude Code and Codex both read real logs on this Mac with plausible numbers. Codex is no longer fixture only.
 
+Phase 2 on this Mac, 19 Nov 2026:
+
+- `install.sh` downloaded and verified the real v0.1.0-rc.2 binary and refused a tampered checksum (download only; `grit install` was not run).
+- `grit daemon` ran against real logs with the exclude list; its dashboard was checked page by page in a browser.
+- `grit login` completed against a local server in a real browser; the key was saved readable only by the user and never appeared in a URL or the server log.
+- `grit doctor` gave a clear report.
+- Real logs give the same per-session numbers before and after the incremental parser.
+
 ## Fixture only
 
 - Hook collector.
 - Activity signal on Windows and Linux (compiles under `CGO_ENABLED=0` in CI, never run on those systems).
 - The hand-written path of the edits classifier (no person typed during this session).
+- `grit install` and `uninstall` on a real Mac (needs Niko's OK: it adds a login item), on Windows and on Linux. Only the per-OS tests have run.
+- `install.ps1` on a real Windows machine.
 
 ## Blocked
 
@@ -38,7 +55,8 @@ This Mac (Apple Silicon, macOS), 19 Nov 2026:
 
 ## Next
 
-Phase 2, starting with the daemon (2.3) and an exclude list for the edits watcher (see the decision below about which folders it walks).
+- 2.2's real-Mac check (install, log out and in, uninstall), once Niko agrees.
+- Phase 3 collectors.
 
 ## Decisions
 
@@ -59,3 +77,10 @@ Phase 2, starting with the daemon (2.3) and an exclude list for the edits watche
 - A turn verifies only if it matches the first link the server ever saw at that index, so a rewritten session cannot launder itself by bringing new links inside the submission.
 - repeated-prompts needs the repeat to be at least 30% of prompts as well as three times, after the demo showed a normal session tripping it.
 - Hand-written sessions have no prompts to attest, so at best they are medium trust.
+- Installed binaries live in `~/.grit/bin`, so the login item never depends on the download folder. Release assets stay the plain binaries; the install scripts do the rest.
+- The daemon's memory cap is 16 MB of Go memory, and it returns memory after any pass that read over 8 MB of new log. macOS `ps` RSS keeps counting returned pages, so the README reports both RSS and physical footprint.
+- The daemon rescores only when a log or working tree changed, or every five minutes, so new activity minutes still reach the numbers.
+- Pausing drops sessions that start during a pause entirely, even after resuming, rather than trimming them. Simple, and it can only under-count.
+- `grit login` keeps `-user` and `-key` for scripts and servers. Until Phase 4 the browser page creates an account; afterwards it will issue a key for the signed-in Hack Club account. The key travels in an auto-submitted POST so it never sits in a URL.
+- The local dashboard allows inline style attributes (for bar widths) but no scripts at all.
+- On Windows the Run value starts `grit daemon -background`, which calls FreeConsole, so a console window shows for a moment at login. A windowless build would lose the CLI's console output; this was the simpler trade.
