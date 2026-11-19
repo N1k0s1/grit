@@ -66,6 +66,7 @@ type Turn struct {
 	Files          []string  `json:"files,omitempty"`
 	Commands       []string  `json:"commands,omitempty"`
 	Flags          []string  `json:"flags,omitempty"`
+	Link           string    `json:"link,omitempty"` // attestation hash chain link (see internal/attest)
 }
 
 // Commit is a git commit made in the project during a session.
@@ -104,12 +105,14 @@ type Result struct {
 	Intervals        []Interval `json:"intervals"`
 	Turns            []Turn     `json:"turns"`
 	Commits          []Commit   `json:"commits,omitempty"`
+	Salt             string     `json:"salt,omitempty"` // attestation salt, sent only with a submission
 }
 
 // Public returns a copy with prompt text, file names and commands removed.
 // This is what `grit sync` sends for logged (not submitted) hours.
 func (r Result) Public() Result {
 	out := r
+	out.Salt = ""
 	out.Turns = make([]Turn, len(r.Turns))
 	for i, t := range r.Turns {
 		t.PromptText = ""
@@ -118,4 +121,22 @@ func (r Result) Public() Result {
 		out.Turns[i] = t
 	}
 	return out
+}
+
+// Trust tiers for a session.
+const (
+	TierHigh   = "high"   // witnessed live by the server and scored with activity data
+	TierMedium = "medium" // one of the two
+	TierLow    = "low"    // neither
+)
+
+// Tier combines the two independent trust signals into a tier.
+func Tier(witnessed, activity bool) string {
+	switch {
+	case witnessed && activity:
+		return TierHigh
+	case witnessed || activity:
+		return TierMedium
+	}
+	return TierLow
 }

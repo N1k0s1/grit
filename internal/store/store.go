@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/n1k0s1/grit/internal/attest"
 	"github.com/n1k0s1/grit/internal/model"
 	_ "modernc.org/sqlite"
 )
@@ -59,6 +60,14 @@ CREATE TABLE IF NOT EXISTS commits (
   deletions INTEGER NOT NULL,
   PRIMARY KEY (user_id, sha)
 );
+CREATE TABLE IF NOT EXISTS links (
+  user_id INTEGER NOT NULL,
+  session_id TEXT NOT NULL,
+  idx INTEGER NOT NULL,
+  hash TEXT NOT NULL,
+  first_seen INTEGER NOT NULL,
+  PRIMARY KEY (user_id, session_id, idx, hash)
+);
 CREATE TABLE IF NOT EXISTS submissions (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -73,8 +82,33 @@ CREATE TABLE IF NOT EXISTS submissions (
 );
 `
 
+// columns added after the first release, created on open if missing.
+var migrations = []struct{ table, column, def string }{
+	{"sessions", "witness", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "signal", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "tier", "TEXT NOT NULL DEFAULT 'low'"},
+}
+
+func migrate(db *sql.DB) error {
+	for _, m := range migrations {
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, m.table, m.column).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			if _, err := db.Exec(`ALTER TABLE ` + m.table + ` ADD COLUMN ` + m.column + ` ` + m.def); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // Store wraps the database handle.
-type Store struct{ db *sql.DB }
+type Store struct {
+	db  *sql.DB
+	Now func() time.Time // the server clock; tests replace it
+}
 
 // User is an account.
 type User struct {
@@ -96,7 +130,10 @@ func Open(path string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	if err := migrate(db); err != nil {
+		return nil, err
+	}
+	return &Store{db: db, Now: time.Now}, nil
 }
 
 func hashKey(k string) string {
@@ -165,21 +202,28 @@ func (s *Store) UpsertSessions(userID int64, rs []model.Result) error {
 		return err
 	}
 	defer tx.Rollback()
-	now := time.Now().Unix()
+	nowT := s.Now()
+	now := nowT.Unix()
 	for _, r := range rs {
 		pid, err := s.project(tx, userID, r.Project, r.Remote)
 		if err != nil {
 			return err
 		}
+		witness, err := recordLinks(tx, userID, r, nowT)
+		if err != nil {
+			return err
+		}
+		tier := model.Tier(witness == string(attest.Witnessed), r.Signal == "activity")
 		flags, _ := json.Marshal(nonNil(r.Flags))
 		body, _ := json.Marshal(r)
-		_, err = tx.Exec(`INSERT INTO sessions(user_id,id,project_id,harness,model,branch,start_at,end_at,wall_s,agent_s,credited_s,prompts,flags,body,updated_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		_, err = tx.Exec(`INSERT INTO sessions(user_id,id,project_id,harness,model,branch,start_at,end_at,wall_s,agent_s,credited_s,prompts,flags,body,updated_at,witness,signal,tier)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(user_id,id) DO UPDATE SET project_id=excluded.project_id, harness=excluded.harness, model=excluded.model,
 			branch=excluded.branch, start_at=excluded.start_at, end_at=excluded.end_at, wall_s=excluded.wall_s, agent_s=excluded.agent_s,
-			credited_s=excluded.credited_s, prompts=excluded.prompts, flags=excluded.flags, body=excluded.body, updated_at=excluded.updated_at`,
+			credited_s=excluded.credited_s, prompts=excluded.prompts, flags=excluded.flags, body=excluded.body, updated_at=excluded.updated_at,
+			witness=excluded.witness, signal=excluded.signal, tier=excluded.tier`,
 			userID, r.SessionID, pid, r.Harness, r.Model, r.Branch, r.Start.Unix(), r.End.Unix(), r.WallSec, r.AgentSec,
-			r.CreditedSec, r.Prompts, string(flags), string(body), now)
+			r.CreditedSec, r.Prompts, string(flags), string(body), now, witness, r.Signal, tier)
 		if err != nil {
 			return err
 		}
@@ -192,6 +236,61 @@ func (s *Store) UpsertSessions(userID int64, rs []model.Result) error {
 		}
 	}
 	return tx.Commit()
+}
+
+var hexLink = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// recordLinks stores each turn's attestation link with the time the server
+// first saw it (later syncs never move that time), then works out whether
+// the whole session was witnessed live. Sessions without links (older
+// clients, hand-written sessions) return "".
+func recordLinks(tx *sql.Tx, userID int64, r model.Result, now time.Time) (string, error) {
+	has := false
+	status := attest.Witnessed
+	for i, t := range r.Turns {
+		if !hexLink.MatchString(t.Link) {
+			status = attest.Backfilled
+			continue
+		}
+		has = true
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO links(user_id, session_id, idx, hash, first_seen) VALUES(?,?,?,?,?)`,
+			userID, r.SessionID, i, t.Link, now.UnixMilli()); err != nil {
+			return "", err
+		}
+		var first int64
+		if err := tx.QueryRow(`SELECT first_seen FROM links WHERE user_id = ? AND session_id = ? AND idx = ? AND hash = ?`,
+			userID, r.SessionID, i, t.Link).Scan(&first); err != nil {
+			return "", err
+		}
+		if attest.Timing(t.PromptAt, time.UnixMilli(first), attest.Window) != attest.Witnessed {
+			status = attest.Backfilled
+		}
+	}
+	if !has {
+		return "", nil
+	}
+	return string(status), nil
+}
+
+// SeenLinks returns every link recorded for a session, by turn index, for
+// verifying a submission.
+func (s *Store) SeenLinks(userID int64, sessionID string) (map[int][]attest.Seen, error) {
+	rows, err := s.db.Query(`SELECT idx, hash, first_seen FROM links WHERE user_id = ? AND session_id = ? ORDER BY first_seen`, userID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int][]attest.Seen{}
+	for rows.Next() {
+		var idx int
+		var h string
+		var first int64
+		if err := rows.Scan(&idx, &h, &first); err != nil {
+			return out, err
+		}
+		out[idx] = append(out[idx], attest.Seen{Hash: h, FirstSeen: time.UnixMilli(first).UTC()})
+	}
+	return out, rows.Err()
 }
 
 func nonNil(x []string) []string {
@@ -214,6 +313,9 @@ type SessionRow struct {
 	Credited int      `json:"credited"`
 	Prompts  int      `json:"prompts"`
 	Flags    []string `json:"flags"`
+	Witness  string   `json:"witness"` // witnessed, backfilled or "" (no attestation)
+	Signal   string   `json:"signal"`  // "activity" when scored with keyboard and mouse data
+	Tier     string   `json:"tier"`    // high, medium or low
 }
 
 // ProjectRow is a project summary.
@@ -253,7 +355,8 @@ type Profile struct {
 // Profile loads a user's public data.
 func (s *Store) Profile(u User) (Profile, error) {
 	p := Profile{User: u, Sessions: []SessionRow{}, Projects: []ProjectRow{}, Submissions: []SubmissionRow{}}
-	rows, err := s.db.Query(`SELECT s.id, p.name, s.harness, s.model, s.start_at, s.end_at, s.wall_s, s.agent_s, s.credited_s, s.prompts, s.flags
+	rows, err := s.db.Query(`SELECT s.id, p.name, s.harness, s.model, s.start_at, s.end_at, s.wall_s, s.agent_s, s.credited_s, s.prompts, s.flags,
+		s.witness, s.signal, s.tier
 		FROM sessions s JOIN projects p ON p.id = s.project_id WHERE s.user_id = ? ORDER BY s.start_at DESC LIMIT 1000`, u.ID)
 	if err != nil {
 		return p, err
@@ -261,7 +364,8 @@ func (s *Store) Profile(u User) (Profile, error) {
 	for rows.Next() {
 		var r SessionRow
 		var flags string
-		if err := rows.Scan(&r.ID, &r.Project, &r.Harness, &r.Model, &r.Start, &r.End, &r.Wall, &r.Agent, &r.Credited, &r.Prompts, &flags); err != nil {
+		if err := rows.Scan(&r.ID, &r.Project, &r.Harness, &r.Model, &r.Start, &r.End, &r.Wall, &r.Agent, &r.Credited, &r.Prompts, &flags,
+			&r.Witness, &r.Signal, &r.Tier); err != nil {
 			rows.Close()
 			return p, err
 		}

@@ -3,6 +3,7 @@
 package scan
 
 import (
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"sort"
@@ -10,10 +11,12 @@ import (
 	"time"
 
 	"github.com/n1k0s1/grit/internal/activity"
+	"github.com/n1k0s1/grit/internal/attest"
 	"github.com/n1k0s1/grit/internal/collect"
 	"github.com/n1k0s1/grit/internal/edits"
 	"github.com/n1k0s1/grit/internal/gitinfo"
 	"github.com/n1k0s1/grit/internal/model"
+	"github.com/n1k0s1/grit/internal/redact"
 	"github.com/n1k0s1/grit/internal/score"
 )
 
@@ -35,6 +38,7 @@ type Scanner struct {
 	cache    map[string][]model.Session
 	commits  map[string][]model.Commit
 	roots    []string
+	secret   []byte
 }
 
 // Roots returns the git roots of projects with a session in the last week,
@@ -110,6 +114,7 @@ func (s *Scanner) Run(since time.Time) ([]*model.Result, error) {
 				r.Commits = s.commits[ck]
 			}
 		}
+		s.attest(&r)
 		rr := r
 		out = append(out, &rr)
 	}
@@ -132,6 +137,29 @@ func (s *Scanner) Run(since time.Time) ([]*model.Result, error) {
 	sort.Strings(s.roots)
 	score.Dedupe(out)
 	return out, nil
+}
+
+// attest adds the attestation chain: one link per turn over the redacted
+// prompt, exactly what `grit submit` would send, plus the session's salt
+// (removed by Public, so it only travels with a submission).
+func (s *Scanner) attest(r *model.Result) {
+	if s.secret == nil {
+		sec, err := attest.LoadSecret(filepath.Join(s.Home, ".grit"))
+		if err != nil {
+			return
+		}
+		s.secret = sec
+	}
+	salt := attest.Salt(s.secret, r.SessionID)
+	red := make([]model.Turn, len(r.Turns))
+	for i, t := range r.Turns {
+		t.PromptText = redact.Text(t.PromptText)
+		red[i] = t
+	}
+	for i, h := range attest.Chain(r.SessionID, salt, red) {
+		r.Turns[i].Link = h
+	}
+	r.Salt = hex.EncodeToString(salt)
 }
 
 // isGitRoot is true only for a real repository, so a session started in a

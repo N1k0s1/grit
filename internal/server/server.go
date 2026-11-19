@@ -4,6 +4,7 @@ package server
 
 import (
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/n1k0s1/grit/internal/attest"
 	"github.com/n1k0s1/grit/internal/model"
 	"github.com/n1k0s1/grit/internal/store"
 )
@@ -348,9 +350,35 @@ func (s *Server) reviews(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "reviews", map[string]any{"Title": "Review queue", "Subs": subs})
 }
 
-type sessionView struct {
-	S       model.Result
-	Commits []model.Commit
+// sessionCheck is what the server itself works out about a submitted
+// session, independent of anything the client claimed.
+type sessionCheck struct {
+	Attest string              // witnessed, backfilled, mismatch, or "" when the session has no attestation
+	Links  []attest.LinkResult // per turn, by index
+	Tier   string
+}
+
+// LinkStatus is the attestation status of turn i, for templates.
+func (c sessionCheck) LinkStatus(i int) string {
+	if i < len(c.Links) {
+		return string(c.Links[i].Status)
+	}
+	return ""
+}
+
+func (s *Server) check(userID int64, x model.Result) sessionCheck {
+	var c sessionCheck
+	seen, _ := s.Store.SeenLinks(userID, x.SessionID)
+	if len(x.Turns) > 0 && (x.Salt != "" || len(seen) > 0) {
+		salt, _ := hex.DecodeString(x.Salt)
+		st, links := attest.Verify(x.SessionID, salt, x.Turns, func(i int) []attest.Seen { return seen[i] }, attest.Window)
+		c.Attest, c.Links = string(st), links
+	}
+	c.Tier = model.Tier(c.Attest == string(attest.Witnessed), x.Signal == "activity")
+	if c.Attest == string(attest.Mismatch) {
+		c.Tier = model.TierLow
+	}
+	return c
 }
 
 func (s *Server) review(w http.ResponseWriter, r *http.Request) {
@@ -363,7 +391,14 @@ func (s *Server) review(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(b.Sessions, func(i, j int) bool { return b.Sessions[i].Start.Before(b.Sessions[j].Start) })
 	var agent, overlap, prompts, low, debug, commits int
 	flagged := 0
-	for _, x := range b.Sessions {
+	checks := make([]sessionCheck, len(b.Sessions))
+	attestCount := map[string]int{}
+	tierCount := map[string]int{}
+	owner, _ := s.Store.UserByName(sub.Username)
+	for i, x := range b.Sessions {
+		checks[i] = s.check(owner.ID, x)
+		attestCount[checks[i].Attest]++
+		tierCount[checks[i].Tier]++
 		agent += x.AgentSec
 		overlap += x.OverlapSec
 		prompts += x.Prompts
@@ -378,6 +413,7 @@ func (s *Server) review(w http.ResponseWriter, r *http.Request) {
 		"Title": fmt.Sprintf("Review #%d", id), "Sub": sub, "B": b,
 		"Agent": agent, "Overlap": overlap, "Prompts": prompts, "Low": low, "Debug": debug,
 		"CommitCount": commits, "Flagged": flagged,
+		"Checks": checks, "AttestCount": attestCount, "TierCount": tierCount,
 	})
 }
 
