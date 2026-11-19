@@ -43,7 +43,12 @@ func daemonPID() (int, bool) {
 func daemon(args []string) {
 	fs := flag.NewFlagSet("daemon", flag.ExitOnError)
 	every := fs.Duration("every", 30*time.Second, "how often to look for changes")
+	background := fs.Bool("background", false, "detach from the console (used by the Windows login entry)")
 	_ = fs.Parse(args)
+	if *background {
+		hideConsole()
+	}
+	rotateLog()
 	if os.Getenv("GOMEMLIMIT") == "" {
 		debug.SetMemoryLimit(memoryLimit)
 	}
@@ -99,5 +104,12 @@ func daemon(args []string) {
 			}
 		}
 		time.Sleep(*every)
+	}
+}
+
+// rotateLog keeps the daemon log small: over 1 MB it moves to daemon.log.old.
+func rotateLog() {
+	if st, err := os.Stat(logPath()); err == nil && st.Size() > 1<<20 {
+		_ = os.Rename(logPath(), logPath()+".old")
 	}
 }
