@@ -130,6 +130,11 @@ func (s *Scanner) Run(since time.Time) ([]*model.Result, error) {
 			}
 		}
 	}
+	for _, r := range out {
+		if r.Harness != "manual" {
+			score.Flag(r, act) // reviewer signals only: credited time is untouched
+		}
+	}
 	s.roots = s.roots[:0]
 	for r := range rootSet {
 		s.roots = append(s.roots, r)

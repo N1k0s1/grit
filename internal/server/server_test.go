@@ -123,4 +123,24 @@ func TestSubmissionAttestationAndTier(t *testing.T) {
 	}
 }
 
+func TestServerRecomputesAnomalies(t *testing.T) {
+	h := newHarness(t)
+	// A client that reports no flags on a templated session.
+	r := clientSession("s3", "")
+	r.Turns = nil
+	for i := 0; i < 6; i++ {
+		r.Turns = append(r.Turns, model.Turn{Index: i, PromptAt: t0.Add(time.Duration(i*5) * time.Minute),
+			PromptText: "Improve the game. Iteration " + itoa(int64(i)) + ".", ThinkRule: "x", AgentRule: "y"})
+	}
+	r.Flags = nil
+	var out struct{ ID int64 }
+	h.do("POST", "/api/v1/submissions", store.Bundle{Project: "game", Sessions: []model.Result{r}}, &out)
+	page := h.do("GET", "/review/"+itoa(out.ID), nil, nil)
+	for _, want := range []string{"regular-timing (server)", "repeated-prompts (server)"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("review page missing %q", want)
+		}
+	}
+}
+
 func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }

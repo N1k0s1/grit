@@ -45,7 +45,7 @@
 <section class="card session-block">
   <div class="card-head">
     <h2>{{when $s.Start}} <span class="muted">· {{$s.Harness}}{{if $s.Model}} · {{$s.Model}}{{end}}{{if $s.Branch}} · {{$s.Branch}}{{end}}</span></h2>
-    <div><span class="tier {{$c.Tier}}" title="Trust tier">{{$c.Tier}}</span> {{if $c.Attest}}<span class="att {{$c.Attest}}" title="Attestation">{{$c.Attest}}</span>{{else}}<span class="att none">no attestation</span>{{end}} {{if eq $s.Signal "activity"}}<span class="att witnessed" title="Scored with keyboard and mouse activity">activity</span>{{else}}<span class="att none" title="No keyboard and mouse data: timestamps only">no activity data</span>{{end}} {{range $s.Flags}}<span class="flag">{{.}}</span>{{end}} <b>{{dur $s.CreditedSec}}</b> <span class="muted">of {{dur $s.WallSec}}</span></div>
+    <div><span class="tier {{$c.Tier}}" title="Trust tier">{{$c.Tier}}</span> {{if $c.Attest}}<span class="att {{$c.Attest}}" title="Attestation">{{$c.Attest}}</span>{{else}}<span class="att none">no attestation</span>{{end}} {{if eq $s.Signal "activity"}}<span class="att witnessed" title="Scored with keyboard and mouse activity">activity</span>{{else}}<span class="att none" title="No keyboard and mouse data: timestamps only">no activity data</span>{{end}} {{range $s.Flags}}<span class="flag">{{.}}</span>{{end}}{{range $c.Found}}<span class="flag" title="Not reported by the client: found by the server in the submitted prompts">{{.}} (server)</span>{{end}} <b>{{dur $s.CreditedSec}}</b> <span class="muted">of {{dur $s.WallSec}}</span></div>
   </div>
   <div class="timeline" data-idx="{{$i}}"></div>
   <details {{if eq (len $.B.Sessions) 1}}open{{end}}>

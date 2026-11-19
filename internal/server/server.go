@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/n1k0s1/grit/internal/attest"
 	"github.com/n1k0s1/grit/internal/model"
+	"github.com/n1k0s1/grit/internal/score"
 	"github.com/n1k0s1/grit/internal/store"
 )
 
@@ -356,6 +358,7 @@ type sessionCheck struct {
 	Attest string              // witnessed, backfilled, mismatch, or "" when the session has no attestation
 	Links  []attest.LinkResult // per turn, by index
 	Tier   string
+	Found  []string // anomaly flags the server found in the bundle that the client did not report
 }
 
 // LinkStatus is the attestation status of turn i, for templates.
@@ -377,6 +380,14 @@ func (s *Server) check(userID int64, x model.Result) sessionCheck {
 	c.Tier = model.Tier(c.Attest == string(attest.Witnessed), x.Signal == "activity")
 	if c.Attest == string(attest.Mismatch) {
 		c.Tier = model.TierLow
+	}
+	// Recompute anomaly flags from the submitted prompts rather than trusting
+	// the client's list. No activity data exists here, so that one signal
+	// can only come from the client.
+	for _, f := range score.Anomalies(x, nil) {
+		if !slices.Contains(x.Flags, f) {
+			c.Found = append(c.Found, f)
+		}
 	}
 	return c
 }
