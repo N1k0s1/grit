@@ -218,6 +218,11 @@ func explain(args []string) {
 			fmt.Printf(" (%s removed: overlapped another session)", dur(r.OverlapSec))
 		}
 		fmt.Println()
+		if r.Signal == "activity" {
+			fmt.Println("scored with keyboard and mouse activity: only minutes with input count")
+		} else {
+			fmt.Println("no activity data for this session: scored by timestamps only (lower trust)")
+		}
 		if len(r.Flags) > 0 {
 			fmt.Println("flags:", strings.Join(r.Flags, ", "))
 		}

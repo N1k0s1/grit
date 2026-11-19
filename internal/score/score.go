@@ -89,8 +89,31 @@ func mins(d time.Duration) string {
 	return fmt.Sprintf("%.0fm", d.Minutes())
 }
 
-// Score computes a Result for one session.
-func Score(s model.Session, c Config) model.Result {
+// Activity reports, per minute, whether there was keyboard or mouse input.
+// activity.Reader implements it. Seen says whether the sampler was running
+// at all, so "no input" and "no data" stay different things.
+type Activity interface {
+	Seen(t time.Time) bool
+	Active(t time.Time) bool
+}
+
+// MinCoverage is the share of a session's minutes the sampler must have seen
+// for the activity rules (v2) to apply. Below it the session is scored with
+// the v1 rules and carries no activity signal, which lowers its trust tier.
+const MinCoverage = 0.5
+
+// Score computes a Result for one session with the v1 rules (timestamps only).
+func Score(s model.Session, c Config) model.Result { return ScoreWith(s, c, nil) }
+
+// ScoreWith computes a Result, using activity data when there is enough of
+// it. With activity (v2) the v1 windows still decide what could count, and
+// inside them only minutes with input are credited:
+//
+//   - think: minutes with input inside the v1 think window;
+//   - agent: a supervised run counts in full only if there was input during
+//     it or just after it; otherwise only its first minute, where it had input;
+//   - review: minutes with input in the tail after the last run.
+func ScoreWith(s model.Session, c Config, act Activity) model.Result {
 	ev := append([]model.Event(nil), s.Events...)
 	sort.SliceStable(ev, func(i, j int) bool { return ev[i].At.Before(ev[j].At) })
 
@@ -140,6 +163,11 @@ func Score(s model.Session, c Config) model.Result {
 	r.FilesTouched = len(files)
 	r.Prompts = len(turns)
 
+	v2 := act != nil && len(turns) > 0 && coverage(act, r.Start, r.End.Add(c.ReviewTail)) >= MinCoverage
+	if v2 {
+		r.Signal = "activity"
+	}
+
 	for i := range turns {
 		t := &turns[i]
 		low := IsLowEffort(t.PromptText)
@@ -172,20 +200,42 @@ func Score(s model.Session, c Config) model.Result {
 				t.ThinkRule = "idle " + mins(gap) + " before prompt: typing estimate only"
 			}
 		}
-		if low && think > c.LowEffortCap {
-			think = c.LowEffortCap
-			t.ThinkRule += ", capped (low-effort prompt)"
+		var thinkParts []model.Interval
+		if v2 {
+			thinkParts = activeParts(act, t.PromptAt.Add(-think), t.PromptAt)
+			got := sumParts(thinkParts)
+			if got == 0 {
+				t.ThinkRule += ", but no keyboard or mouse input: not counted"
+			} else if got < think {
+				t.ThinkRule += ", input in " + mins(got) + " of it"
+			} else {
+				t.ThinkRule += ", input throughout"
+			}
+			if low && got > c.LowEffortCap {
+				thinkParts = keepLast(thinkParts, c.LowEffortCap)
+				t.ThinkRule += ", capped (low-effort prompt)"
+			}
+		} else {
+			if low && think > c.LowEffortCap {
+				think = c.LowEffortCap
+				t.ThinkRule += ", capped (low-effort prompt)"
+			}
+			if think > 0 {
+				thinkParts = []model.Interval{{Start: t.PromptAt.Add(-think), End: t.PromptAt}}
+			}
 		}
-		t.ThinkSec = int(think.Seconds())
+		t.ThinkSec = int(sumParts(thinkParts).Seconds())
 
 		// Agent credit: supervising the run that followed.
 		run := t.AgentEnd.Sub(t.PromptAt)
 		t.AgentSec = int(run.Seconds())
 		r.AgentSec += t.AgentSec
 		var agent time.Duration
+		supervised := false
 		if i+1 < len(turns) {
 			back := turns[i+1].PromptAt.Sub(t.AgentEnd)
 			if back <= c.ReturnWindow {
+				supervised = true
 				agent = min(run, c.AgentCap)
 				t.AgentRule = "came back within " + mins(back) + ": supervised"
 				if run > c.AgentCap {
@@ -199,17 +249,37 @@ func Score(s model.Session, c Config) model.Result {
 			agent = min(run, c.Unsupervised)
 			t.AgentRule = "last run: first " + mins(c.Unsupervised) + " counts"
 		}
-		t.AgentCreditSec = int(agent.Seconds())
+		var agentParts []model.Interval
+		switch {
+		case agent <= 0:
+		case !v2:
+			agentParts = []model.Interval{{Start: t.PromptAt, End: t.PromptAt.Add(agent)}}
+		case supervised && anyActive(act, t.PromptAt, t.AgentEnd.Add(c.ReturnWindow)):
+			agentParts = []model.Interval{{Start: t.PromptAt, End: t.PromptAt.Add(agent)}}
+			t.AgentRule += ", input during or just after the run"
+		case supervised:
+			t.AgentRule += ", but no keyboard or mouse input during or just after the run: not counted"
+		default:
+			agentParts = activeParts(act, t.PromptAt, t.PromptAt.Add(agent))
+			if len(agentParts) == 0 {
+				t.AgentRule += ", but no keyboard or mouse input then: not counted"
+			} else {
+				t.AgentRule += ", where there was input"
+			}
+		}
+		t.AgentCreditSec = int(sumParts(agentParts).Seconds())
 
 		// Intervals, in time order.
-		if think > 0 {
-			r.Intervals = append(r.Intervals, model.Interval{Start: t.PromptAt.Add(-think), End: t.PromptAt, Kind: "think"})
-		}
-		if agent > 0 {
-			r.Intervals = append(r.Intervals, model.Interval{Start: t.PromptAt, End: t.PromptAt.Add(agent), Kind: "agent"})
-		}
+		r.Intervals = append(r.Intervals, label(thinkParts, "think", t.ThinkRule)...)
+		r.Intervals = append(r.Intervals, label(agentParts, "agent", t.AgentRule)...)
 		if i == len(turns)-1 {
-			r.Intervals = append(r.Intervals, model.Interval{Start: t.AgentEnd, End: t.AgentEnd.Add(c.ReviewTail), Kind: "review"})
+			rule := "review tail: " + mins(c.ReviewTail) + " after the last run"
+			tail := []model.Interval{{Start: t.AgentEnd, End: t.AgentEnd.Add(c.ReviewTail)}}
+			if v2 {
+				tail = activeParts(act, t.AgentEnd, t.AgentEnd.Add(c.ReviewTail))
+				rule += ", where there was input"
+			}
+			r.Intervals = append(r.Intervals, label(tail, "review", rule)...)
 		}
 	}
 	r.Intervals = mergeOwn(r.Intervals)
@@ -229,6 +299,90 @@ func Score(s model.Session, c Config) model.Result {
 	r.CreditedSec = total(r.Intervals)
 	r.Flags = sessionFlags(r)
 	return r
+}
+
+// coverage is the share of minutes in [from, to) the sampler saw.
+func coverage(a Activity, from, to time.Time) float64 {
+	n, seen := 0, 0
+	for m := from.Truncate(time.Minute); m.Before(to); m = m.Add(time.Minute) {
+		n++
+		if a.Seen(m) {
+			seen++
+		}
+	}
+	if n == 0 {
+		return 0
+	}
+	return float64(seen) / float64(n)
+}
+
+// anyActive reports whether any minute overlapping [from, to] had input.
+func anyActive(a Activity, from, to time.Time) bool {
+	for m := from.Truncate(time.Minute); !m.After(to); m = m.Add(time.Minute) {
+		if a.Active(m) {
+			return true
+		}
+	}
+	return false
+}
+
+// activeParts returns the parts of [from, to) that fall in minutes with
+// input, merged into continuous stretches.
+func activeParts(a Activity, from, to time.Time) []model.Interval {
+	var out []model.Interval
+	for m := from.Truncate(time.Minute); m.Before(to); m = m.Add(time.Minute) {
+		if !a.Active(m) {
+			continue
+		}
+		s, e := m, m.Add(time.Minute)
+		if s.Before(from) {
+			s = from
+		}
+		if e.After(to) {
+			e = to
+		}
+		if n := len(out); n > 0 && out[n-1].End.Equal(s) {
+			out[n-1].End = e
+			continue
+		}
+		out = append(out, model.Interval{Start: s, End: e})
+	}
+	return out
+}
+
+func sumParts(ps []model.Interval) time.Duration {
+	var d time.Duration
+	for _, p := range ps {
+		d += p.End.Sub(p.Start)
+	}
+	return d
+}
+
+// keepLast trims parts from the front until they total at most limit, so the
+// time kept is the time closest to the prompt.
+func keepLast(ps []model.Interval, limit time.Duration) []model.Interval {
+	var out []model.Interval
+	left := limit
+	for i := len(ps) - 1; i >= 0 && left > 0; i-- {
+		p := ps[i]
+		if d := p.End.Sub(p.Start); d > left {
+			p.Start = p.End.Add(-left)
+		}
+		left -= p.End.Sub(p.Start)
+		out = append([]model.Interval{p}, out...)
+	}
+	return out
+}
+
+func label(ps []model.Interval, kind, rule string) []model.Interval {
+	out := make([]model.Interval, 0, len(ps))
+	for _, p := range ps {
+		if p.End.After(p.Start) {
+			p.Kind, p.Rule = kind, rule
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // mergeOwn removes self-overlap inside one session (for example a think

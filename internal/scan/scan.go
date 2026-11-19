@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/n1k0s1/grit/internal/activity"
 	"github.com/n1k0s1/grit/internal/collect"
 	"github.com/n1k0s1/grit/internal/gitinfo"
 	"github.com/n1k0s1/grit/internal/model"
@@ -22,8 +23,9 @@ type fileKey struct {
 // logs that changed. On an old laptop that is the difference between a
 // background process you never notice and one you do.
 type Scanner struct {
-	Home    string
-	Config  score.Config
+	Home     string
+	Config   score.Config
+	Activity activity.Log // keyboard and mouse minutes; empty Dir disables v2
 	parsed  map[string]fileKey
 	cache   map[string][]model.Session
 	commits map[string][]model.Commit
@@ -31,7 +33,7 @@ type Scanner struct {
 
 // New makes a scanner for a home directory.
 func New(home string) *Scanner {
-	return &Scanner{Home: home, Config: score.Default, parsed: map[string]fileKey{}, cache: map[string][]model.Session{}, commits: map[string][]model.Commit{}}
+	return &Scanner{Home: home, Config: score.Default, Activity: activity.Log{Dir: activity.DefaultDir(home)}, parsed: map[string]fileKey{}, cache: map[string][]model.Session{}, commits: map[string][]model.Commit{}}
 }
 
 // Run returns scored, deduplicated results for sessions active since a time.
@@ -55,6 +57,10 @@ func (s *Scanner) Run(since time.Time) ([]*model.Result, error) {
 			sessions = append(sessions, s.cache[p]...)
 		}
 	}
+	var act score.Activity
+	if s.Activity.Dir != "" {
+		act = s.Activity.Reader() // fresh per run so new samples show up
+	}
 	var out []*model.Result
 	for _, sess := range sessions {
 		if sess.Cwd != "" {
@@ -70,7 +76,7 @@ func (s *Scanner) Run(since time.Time) ([]*model.Result, error) {
 		if sess.Project == "" {
 			sess.Project = "unknown"
 		}
-		r := score.Score(sess, s.Config)
+		r := score.ScoreWith(sess, s.Config, act)
 		if r.Prompts == 0 || r.End.Before(since) {
 			continue
 		}

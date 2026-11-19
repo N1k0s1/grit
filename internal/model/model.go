@@ -43,7 +43,8 @@ type Session struct {
 type Interval struct {
 	Start time.Time `json:"s"`
 	End   time.Time `json:"e"`
-	Kind  string    `json:"k"` // "think", "agent", "review"
+	Kind  string    `json:"k"` // "think", "agent", "review", "hand"
+	Rule  string    `json:"r"` // why this stretch was credited
 }
 
 // Seconds is the length of the interval in whole seconds.
@@ -97,6 +98,7 @@ type Result struct {
 	LowEffortPrompts int        `json:"low_effort"`
 	SpecificPrompts  int        `json:"specific"`
 	Flags            []string   `json:"flags,omitempty"`
+	Signal           string     `json:"signal,omitempty"` // "activity" when keyboard and mouse data shaped the score
 	Intervals        []Interval `json:"intervals"`
 	Turns            []Turn     `json:"turns"`
 	Commits          []Commit   `json:"commits,omitempty"`
