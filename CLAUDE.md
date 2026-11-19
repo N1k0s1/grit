@@ -45,7 +45,10 @@ Every commit must pass `go vet ./...` and `go test ./...`.
 | `cmd/grit` | Client CLI |
 | `cmd/gritd` | Server |
 | `internal/collect` | One collector per AI tool, plus the hook receiver |
-| `internal/score` | Credited time rules and cross-session dedupe |
+| `internal/activity` | Seconds since last input per OS, and the per-minute sampler |
+| `internal/edits` | Working tree polling and agent versus hand attribution |
+| `internal/attest` | Hash chain attestation of turns |
+| `internal/score` | Credited time rules, anomaly flags and cross-session dedupe |
 | `internal/scan` | Collect, link git, score, dedupe |
 | `internal/gitinfo` | Repo, remote and commits for a working directory |
 | `internal/redact` | Secret scrubbing for submissions |
